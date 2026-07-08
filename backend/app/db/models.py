@@ -31,7 +31,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
 
-    receipt = relationship("Receipt", back_populates="uploader")
+    receipts = relationship("Receipt", back_populates="uploader")
 
 
 class Client(Base):
@@ -43,7 +43,7 @@ class Client(Base):
     address = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
 
-    receipt = relationship("Receipt", back_populates="client")
+    receipts = relationship("Receipt", back_populates="client")
 
 
 class Supplier(Base):
@@ -54,6 +54,8 @@ class Supplier(Base):
     name = Column(String, nullable=False)
     address = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
+
+    receipts = relationship("Receipt", back_populates="supplier")
 
 
 class Receipt(Base):
