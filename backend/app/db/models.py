@@ -22,7 +22,7 @@ def generate_uuid():
 
 
 class User(Base):
-    __tabname__ = "users"
+    __tablename__ = "users"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     email = Column(String, unique=True, index=True, nullable=False)
@@ -35,7 +35,7 @@ class User(Base):
 
 
 class Client(Base):
-    __tabname__ = "clients"
+    __tablename__ = "clients"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     cui = Column(String, unique=True, index=True, nullable=False)
@@ -47,7 +47,7 @@ class Client(Base):
 
 
 class Supplier(Base):
-    __tabname__ = "suppliers"
+    __tablename__ = "suppliers"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     cui = Column(String, unique=True, index=True, nullable=False)
@@ -57,7 +57,7 @@ class Supplier(Base):
 
 
 class Receipt(Base):
-    __tabname__ = "receipts"
+    __tablename__ = "receipts"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     client_id = Column(String, ForeignKey("clients.id"), nullable=False)
