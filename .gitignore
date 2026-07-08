@@ -1,0 +1,22 @@
+#Security si variabile de mediu
+.env
+*.env
+
+#Python & Backend
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+backend/uploads
+backend/alembic.ini
+*.db
+*.sqlite3
+
+#Web/Mobile
+node_modules/
+.expo/
+dist/
+build/
+*.log
