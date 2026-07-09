@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes_auth import router as auth_router
+from app.api.routes_system import router as system_router
 
 app = FastAPI(
     title="ContaFlow API",
@@ -22,6 +23,7 @@ app.add_middleware(
 
 # Connect routes to auth
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autentificare"])
+app.include_router(system_router, prefix="/api/v1/system", tags=["Sistem"])
 
 
 @app.get("/")

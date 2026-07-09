@@ -7,13 +7,15 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
+import QRCode from "react-qr-code";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const [token, setToken] = useState<string | null>(null);
+  // Store QR code data
+  const [qrPayload, setQrPayload] = useState<string | null>(null);
 
   const handleLogin = async () => {
     setIsLoading(true);
@@ -22,22 +24,37 @@ export default function LoginScreen() {
       formData.append("username", email);
       formData.append("password", password);
 
-      const response = await fetch("http://127.0.0.1:8000/api/v1/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
+      const authResponse = await fetch(
+        "http://127.0.0.1:8000/api/v1/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData.toString(),
         },
-        body: formData.toString(),
-      });
+      );
 
-      const data = await response.json();
+      const authData = await authResponse.json();
 
-      if (!response.ok) {
-        throw new Error(data.detail || "Authentication error");
+      if (!authResponse.ok) {
+        throw new Error(authData.detail || "Authentication error");
       }
 
-      setToken(data.access_token);
-      alert("Login successful!");
+      // Ask for server ip address
+      const ipResponse = await fetch(
+        "http://127.0.0.1:8000/api/v1/system/network-info",
+      );
+      const ipData = await ipResponse.json();
+
+      // Generate JSON for phone
+      const serverUrl = `http://${ipData.local_ip}:${ipData.port}`;
+      const payload = JSON.stringify({
+        server_url: serverUrl,
+        token: authData.access_token,
+      });
+
+      setQrPayload(payload);
     } catch (error: any) {
       alert(error.message);
     } finally {
@@ -45,12 +62,19 @@ export default function LoginScreen() {
     }
   };
 
-  if (token) {
+  if (qrPayload) {
     return (
       <View style={styles.container}>
         <Text style={styles.title}>You are logged in!</Text>
         <Text style={styles.subtitle}>
-          Your JWT token has been successfully received.
+          Scan the code below using the ContaFlow mobile app:
+        </Text>
+        <View style={styles.qrContainer}>
+          <QRCode value={qrPayload} size={250} />
+        </View>
+
+        <Text style={styles.infoText}>
+          This code contains your secured data and regenerates at every login.
         </Text>
       </View>
     );
@@ -82,7 +106,7 @@ export default function LoginScreen() {
       {isLoading ? (
         <ActivityIndicator size="large" color="#0000ff" />
       ) : (
-        <Button title="Intră în cont" onPress={handleLogin} />
+        <Button title="Sign In" onPress={handleLogin} />
       )}
     </View>
   );
@@ -118,4 +142,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     marginBottom: 15,
   },
+  qrContainer: {
+    padding: 20,
+    backgroundColor: "white",
+    borderRadius: 15,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+    marginBottom: 20,
+  },
+  infoText: { fontSize: 14, color: "#888", textAlign: "center", maxWidth: 400 },
 });
