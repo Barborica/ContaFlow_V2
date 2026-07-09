@@ -4,6 +4,7 @@ import uuid
 from app.db.models import User
 from app.api.deps import get_current_user
 from app.services.ocr_service import extract_text_from_image
+from app.services.parser_service import parse_receipt_text
 
 router = APIRouter()
 
@@ -45,11 +46,12 @@ async def upload_receipt(
         )
 
     extracted_text = extract_text_from_image(file_path)
+    structured_data = parse_receipt_text(extracted_text)
 
     # Return temp parh
     return {
         "status": "success",
         "message": "Imagine încărcată cu succes",
         "temp_path": unique_filename,
-        "extracted_text": extracted_text,
+        "extracted_text": structured_data,
     }
