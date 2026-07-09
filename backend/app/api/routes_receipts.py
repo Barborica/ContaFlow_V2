@@ -3,6 +3,7 @@ import os
 import uuid
 from app.db.models import User
 from app.api.deps import get_current_user
+from app.services.ocr_service import extract_text_from_image
 
 router = APIRouter()
 
@@ -43,10 +44,12 @@ async def upload_receipt(
             status_code=500, detail="Eroare la salvarea imaginii pe server."
         )
 
+    extracted_text = extract_text_from_image(file_path)
+
     # Return temp parh
     return {
         "status": "success",
         "message": "Imagine încărcată cu succes",
         "temp_path": unique_filename,
-        "uploaded_by": current_user.email,
+        "extracted_text": extracted_text,
     }
