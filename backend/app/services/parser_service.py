@@ -3,16 +3,43 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Regex pattern for CUI/CIF with optional RO/R0 prefix
+CUI_PATTERN = re.compile(
+    r"(?:C\.?U\.?I\.?|C\.?I\.?F\.?|C\.?F\.?)\s*:?\s*(?:RO|R0)?\s*(\d{2,10})"
+)
+# Fallback pattern: standalone RO/R0 followed by digits
+RO_PATTERN = re.compile(r"\b(?:RO|R0)\s*(\d{2,10})\b")
+
+
+def _extract_all_cuis(full_text: str) -> list[str]:
+    """Extract all unique CUI numbers found in text, preserving order of appearance."""
+    found = []
+
+    # Search with primary CUI/CIF pattern
+    for match in CUI_PATTERN.finditer(full_text):
+        cui = f"RO{match.group(1)}"
+        if cui not in found:
+            found.append(cui)
+
+    # Fallback: standalone RO followed by digits
+    for match in RO_PATTERN.finditer(full_text):
+        cui = f"RO{match.group(1)}"
+        if cui not in found:
+            found.append(cui)
+
+    return found
+
 
 def parse_receipt_text(text_lines: list) -> dict:
     """Parse key data from receipt text lines using Regex for Romanian receipts."""
     parsed_data = {
         "company_name": None,
-        "cui": None,
+        "supplier_cui": None,  # first CUI on receipt (top = supplier)
+        "client_cui": None,  # second CUI on receipt (middle = client)
         "date": None,
         "total": None,
         "items": [],
-        "raw_text": text_lines,  # Keep raw text for debugging
+        "raw_text": text_lines,  # keep raw text for debugging
     }
 
     if not text_lines:
@@ -29,19 +56,15 @@ def parse_receipt_text(text_lines: list) -> dict:
             parsed_data["company_name"] = line_stripped
             break
 
-    # 1. Extract CUI / CIF (handles OCR errors like 'R0' instead of 'RO')
-    cui_match = re.search(
-        r"(?:C\.?U\.?I\.?|C\.?I\.?F\.?|C\.?F\.?)\s*:?\s*(?:RO|R0)?\s*(\d{2,10})",
-        full_text,
-    )
-    if cui_match:
-        number = cui_match.group(1)
-        parsed_data["cui"] = f"RO{number}"
-    else:
-        # Fallback: search for RO/R0 followed directly by digits
-        ro_match = re.search(r"\b(?:RO|R0)\s*(\d{2,10})\b", full_text)
-        if ro_match:
-            parsed_data["cui"] = f"RO{ro_match.group(1)}"
+    # 1. Extract all CUI/CIF numbers from receipt
+    # Receipt layout: supplier CUI at top, client CUI in the middle
+    all_cuis = _extract_all_cuis(full_text)
+
+    if len(all_cuis) >= 2:
+        parsed_data["supplier_cui"] = all_cuis[0]  # first = supplier (top)
+        parsed_data["client_cui"] = all_cuis[1]  # second = client (middle)
+    elif len(all_cuis) == 1:
+        parsed_data["supplier_cui"] = all_cuis[0]  # only one found
 
     # 2. Extract Date (formats: DD.MM.YYYY, DD-MM-YYYY, DD/MM/YYYY)
     date_match = re.search(

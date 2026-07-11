@@ -1,5 +1,8 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.api.routes_auth import router as auth_router
 from app.api.routes_system import router as system_router
 from app.api.routes_receipts import router as receipts_router
@@ -22,10 +25,15 @@ app.add_middleware(
     allow_headers=["*"],  # Permit any headers (auth tokens)
 )
 
-# Connect routes to auth, system ip and receipts
+# Connect routes
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autentificare"])
 app.include_router(system_router, prefix="/api/v1/system", tags=["Sistem"])
 app.include_router(receipts_router, prefix="/api/v1/receipts", tags=["Bonuri fiscale"])
+
+# Serve temp uploaded images as static files
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads", "temp")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads/temp", StaticFiles(directory=UPLOAD_DIR), name="temp_uploads")
 
 
 @app.get("/")

@@ -29,7 +29,7 @@ class User(Base):
     password = Column(String, nullable=False)  # hashed
     role = Column(String, default="accountant")
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     receipts = relationship("Receipt", back_populates="uploader")
 
@@ -41,7 +41,7 @@ class Client(Base):
     cui = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
     address = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     receipts = relationship("Receipt", back_populates="client")
 
@@ -53,7 +53,7 @@ class Supplier(Base):
     cui = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
     address = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     receipts = relationship("Receipt", back_populates="supplier")
 
@@ -62,14 +62,14 @@ class Receipt(Base):
     __tablename__ = "receipts"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    client_id = Column(String, ForeignKey("clients.id"), nullable=False)
-    supplier_id = Column(String, ForeignKey("suppliers.id"), nullable=False)
+    client_id = Column(String, ForeignKey("clients.id"), nullable=True)  # null until validated
+    supplier_id = Column(String, ForeignKey("suppliers.id"), nullable=True)  # null until validated
     uploaded_by = Column(String, ForeignKey("users.id"), nullable=False)
 
-    entry_number = Column(String, nullable=False)  # receipt number
-    date = Column(Date, nullable=False)
-    time = Column(Time, nullable=False)
-    total_amount = Column(Float, nullable=False)
+    entry_number = Column(String, nullable=True)  # receipt number
+    date = Column(Date, nullable=True)
+    time = Column(Time, nullable=True)
+    total_amount = Column(Float, nullable=True)
     image_path = Column(String, nullable=True)
     status = Column(String, default="pending")  # pending/validated
 
@@ -86,6 +86,7 @@ class ReceiptItem(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     receipt_id = Column(String, ForeignKey("receipts.id"), nullable=False)
+    description = Column(String, nullable=True)  # product/service name
     quantity = Column(Float, default=1.0)
     unit_price = Column(Float, nullable=False)
     total_price = Column(Float, nullable=False)
@@ -102,4 +103,4 @@ class AuditLog(Base):
     target_type = Column(String, nullable=False)
     target_id = Column(String, nullable=True)
     details = Column(JSON, nullable=True)
-    timestamp = Column(DateTime, default=datetime.now(timezone.utc))
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
