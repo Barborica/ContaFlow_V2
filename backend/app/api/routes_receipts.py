@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.db.models import User, Receipt
 from app.api.deps import get_current_user
+from app.api.routes_ws import manager as ws_manager
 from app.services.ocr_service import extract_text_from_image
 from app.services.parser_service import parse_receipt_text
 
@@ -73,7 +74,7 @@ async def upload_receipt(
     db.commit()
     db.refresh(new_receipt)
 
-    return {
+    response_data = {
         "status": "success",
         "receipt_id": new_receipt.id,
         "temp_path": unique_filename,
@@ -86,6 +87,14 @@ async def upload_receipt(
             "items": structured_data.get("items", []),
         },
     }
+
+    # Notify connected web clients via WebSocket
+    await ws_manager.broadcast({
+        "event": "new_receipt",
+        "data": response_data,
+    })
+
+    return response_data
 
 
 @router.get("/pending")

@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../App";
+import { API_BASE_URL } from "../config";
 
 // Screen props type configuration for React Navigation
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
@@ -30,7 +31,7 @@ export default function LoginScreen({ navigation }: Props) {
       formData.append("password", password);
 
       const authResponse = await fetch(
-        "http://127.0.0.1:8000/api/v1/auth/login",
+        `${API_BASE_URL}/api/v1/auth/login`,
         {
           method: "POST",
           headers: {
@@ -46,14 +47,17 @@ export default function LoginScreen({ navigation }: Props) {
         throw new Error(authData.detail || "Eroare la autentificare");
       }
 
-      // Fetch server local network configurations for the dynamic QR payload
+      // Fetch LAN IP for mobile QR payload
       const ipResponse = await fetch(
-        "http://127.0.0.1:8000/api/v1/system/network-info",
+        `${API_BASE_URL}/api/v1/system/network-info`,
       );
       const ipData = await ipResponse.json();
       const serverUrl = `http://${ipData.local_ip}:${ipData.port}`;
 
-      // Navigation handler replacing current screen to block backward routing actions
+      // Persist session so it survives page refresh
+      localStorage.setItem("contaflow_token", authData.access_token);
+      localStorage.setItem("contaflow_server_url", serverUrl);
+
       navigation.replace("Dashboard", {
         token: authData.access_token,
         serverUrl: serverUrl,

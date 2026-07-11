@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -9,44 +9,113 @@ import {
 import QRCode from "react-qr-code";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../App";
+import { API_BASE_URL, WS_BASE_URL } from "../config";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Dashboard">;
 
-// Pending receipt data structure from backend
+// Pending receipt data structure matching backend response
 type PendingReceipt = {
-  id: string;
+  receipt_id: string;
   temp_path: string;
   parsed_data: {
     company_name: string | null;
-    cui: string | null;
+    supplier_cui: string | null;
+    client_cui: string | null;
     date: string | null;
     total: number | null;
   };
-  uploaded_at: string;
 };
 
 export default function DashboardScreen({ navigation, route }: Props) {
-  // Extract parameters passed from LoginScreen
   const { token, serverUrl } = route.params;
-
-  // List of pending receipts to be populated via WebSocket or polling
   const [pendingReceipts, setPendingReceipts] = useState<PendingReceipt[]>([]);
+  const [wsConnected, setWsConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
 
-  // QR Code payload containing server URL and JWT token for mobile client access
+  // QR Code payload for mobile client
   const qrPayload = JSON.stringify({
     server_url: serverUrl,
     token: token,
   });
 
-  // Logout handler returning user to Login screen
+  // Connect to WebSocket on mount, disconnect on unmount
+  useEffect(() => {
+    // WebSocket connects via localhost (same machine), not LAN IP
+    const wsUrl = `${WS_BASE_URL}/ws`;
+
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setWsConnected(true);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.event === "new_receipt") {
+          // Prepend new receipt to the list
+          setPendingReceipts((prev) => [message.data, ...prev]);
+        }
+      } catch {
+        // Ignore malformed messages
+      }
+    };
+
+    ws.onclose = () => {
+      setWsConnected(false);
+    };
+
+    ws.onerror = () => {
+      setWsConnected(false);
+    };
+
+    // Cleanup on unmount
+    return () => {
+      ws.close();
+    };
+  }, []);
+
+  // Load existing pending receipts on mount
+  useEffect(() => {
+    const fetchPending = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/receipts/pending`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          // Map backend response to match our PendingReceipt type
+          const mapped = data.map((r: any) => ({
+            receipt_id: r.id,
+            temp_path: r.temp_path,
+            parsed_data: {
+              company_name: null,
+              supplier_cui: null,
+              client_cui: null,
+              date: r.date,
+              total: r.total_amount,
+            },
+          }));
+          setPendingReceipts(mapped);
+        }
+      } catch {
+        // Silently fail, receipts will arrive via WebSocket
+      }
+    };
+    fetchPending();
+  }, [token]);
+
   const handleLogout = () => {
+    wsRef.current?.close();
+    localStorage.removeItem("contaflow_token");
+    localStorage.removeItem("contaflow_server_url");
     navigation.replace("Login");
   };
 
-  // Navigate to receipt validation screen
   const handleOpenReceipt = (receipt: PendingReceipt) => {
     navigation.navigate("Validation", {
-      receiptId: receipt.id,
+      receiptId: receipt.receipt_id,
       serverUrl: serverUrl,
       token: token,
     });
@@ -60,9 +129,21 @@ export default function DashboardScreen({ navigation, route }: Props) {
           <Text style={styles.headerTitle}>ContaFlow</Text>
           <Text style={styles.headerSubtitle}>Panou de Control</Text>
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Deconectare</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          {/* WebSocket connection status indicator */}
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: wsConnected ? "#34d399" : "#f87171" },
+            ]}
+          />
+          <Text style={styles.statusText}>
+            {wsConnected ? "Conectat" : "Deconectat"}
+          </Text>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutText}>Deconectare</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -114,17 +195,16 @@ export default function DashboardScreen({ navigation, route }: Props) {
               </Text>
             </View>
           ) : (
-            // Map active pending receipts list
             pendingReceipts.map((receipt) => (
               <TouchableOpacity
-                key={receipt.id}
+                key={receipt.receipt_id}
                 style={styles.receiptCard}
                 onPress={() => handleOpenReceipt(receipt)}
                 activeOpacity={0.7}
               >
                 <View style={styles.receiptInfo}>
                   <Text style={styles.receiptCui}>
-                    {receipt.parsed_data.cui || "CUI nedetectat"}
+                    {receipt.parsed_data.supplier_cui || "CUI nedetectat"}
                   </Text>
                   <Text style={styles.receiptDate}>
                     {receipt.parsed_data.date || "Dată nedetectată"}
@@ -171,6 +251,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#64748b",
     marginTop: 2,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    color: "#94a3b8",
+    marginRight: 12,
   },
   logoutButton: {
     paddingHorizontal: 16,
