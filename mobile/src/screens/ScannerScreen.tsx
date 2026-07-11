@@ -16,7 +16,7 @@ export default function ScannerScreen() {
   const [connected, setConnected] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Referință către componenta camerei pentru a putea declanșa funcția de poză
+  // Reference to the camera component to trigger picture capture
   const cameraRef = useRef<CameraView>(null);
 
   if (!permission) return <View />;
@@ -31,7 +31,7 @@ export default function ScannerScreen() {
     );
   }
 
-  // 1. Funcția pentru scanarea QR-ului (Rămâne neschimbată)
+  // 1. QR Code scanning handler
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     setScanned(true);
     try {
@@ -51,23 +51,23 @@ export default function ScannerScreen() {
     }
   };
 
-  // 2. Funcția NOUĂ pentru fotografierea și trimiterea bonului
+  // 2. Picture capture and upload handler
   const takePicture = async () => {
     if (cameraRef.current) {
       setIsUploading(true);
       try {
-        // Facem poza la calitate medie pentru a se trimite rapid
+        // Capture image at medium quality for faster network transmission
         const photo = await cameraRef.current.takePictureAsync({
           quality: 0.7,
         });
 
         if (!photo) throw new Error("Nu s-a putut captura imaginea.");
 
-        // Extragem datele securizate din memorie
+        // Retrieve secured configurations from storage
         const serverUrl = await SecureStore.getItemAsync("server_url");
         const token = await SecureStore.getItemAsync("user_token");
 
-        // Construim pachetul multipart/form-data
+        // Construct multipart/form-data payload
         const formData = new FormData();
         formData.append("file", {
           uri: photo.uri,
@@ -75,11 +75,11 @@ export default function ScannerScreen() {
           type: "image/jpeg",
         } as any);
 
-        // Trimitem request-ul către FastAPI
+        // Send POST request to FastAPI endpoint
         const response = await fetch(`${serverUrl}/api/v1/receipts/upload`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`, // Autentificarea!
+            Authorization: `Bearer ${token}`, // Bearer authentication
           },
           body: formData,
         });
@@ -102,13 +102,13 @@ export default function ScannerScreen() {
     }
   };
 
-  // Dacă suntem conectați, afișăm interfața de făcut poze la bonuri
+  // Render camera interface for receipt capture if connected
   if (connected) {
     return (
       <View style={styles.container}>
         <Text style={styles.title}>Pozează Bonul Fiscal</Text>
         <View style={styles.barcodebox}>
-          {/* Am oprit scanarea de coduri QR, folosim camera doar pentru poze */}
+          {/* QR code scanning is disabled; camera is only used for taking photos */}
           <CameraView
             style={StyleSheet.absoluteFillObject}
             facing="back"
@@ -119,13 +119,13 @@ export default function ScannerScreen() {
         {isUploading ? (
           <ActivityIndicator size="large" color="#0000ff" />
         ) : (
-          <Button title="📸 Captură Bon" onPress={takePicture} color="green" />
+          <Button title="Captură Bon" onPress={takePicture} color="green" />
         )}
       </View>
     );
   }
 
-  // Interfața inițială de scanare QR
+  // Initial QR Code scanning interface
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Scanează codul de pe PC</Text>
