@@ -31,7 +31,11 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    # Client currently selected by this accountant; scanned receipts attach to it
+    active_client_id = Column(String, ForeignKey("clients.id"), nullable=True)
+
     receipts = relationship("Receipt", back_populates="uploader")
+    active_client = relationship("Client", foreign_keys=[active_client_id])
 
 
 class Client(Base):
@@ -41,9 +45,12 @@ class Client(Base):
     cui = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
     address = Column(String, nullable=True)
+    is_deleted = Column(Boolean, default=False)  # soft delete, keeps historical receipts
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    receipts = relationship("Receipt", back_populates="client")
+    receipts = relationship(
+        "Receipt", back_populates="client", foreign_keys="Receipt.client_id"
+    )
 
 
 class Supplier(Base):
@@ -72,13 +79,16 @@ class Receipt(Base):
     total_amount = Column(Float, nullable=True)
     image_path = Column(String, nullable=True)
     status = Column(String, default="pending")  # processing/pending/validated
+    validated_at = Column(DateTime, nullable=True)  # set when accountant validates
 
     # Raw OCR data, unverified, kept until accountant validates
     company_name = Column(String, nullable=True)  # supplier name read from receipt
     supplier_cui = Column(String, nullable=True)  # first CUI on receipt (top)
     client_cui = Column(String, nullable=True)  # second CUI on receipt (middle)
 
-    client = relationship("Client", back_populates="receipts")
+    client = relationship(
+        "Client", back_populates="receipts", foreign_keys=[client_id]
+    )
     supplier = relationship("Supplier", back_populates="receipts")
     uploader = relationship("User", back_populates="receipts")
     items = relationship(

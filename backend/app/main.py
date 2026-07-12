@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes_auth import router as auth_router
 from app.api.routes_system import router as system_router
 from app.api.routes_receipts import router as receipts_router
+from app.api.routes_clients import router as clients_router
 from app.api.routes_ws import router as ws_router
 from app.services.processing import worker as processing_worker, warmup_ocr
 
@@ -44,6 +45,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autentificare"])
 app.include_router(system_router, prefix="/api/v1/system", tags=["Sistem"])
 app.include_router(receipts_router, prefix="/api/v1/receipts", tags=["Bonuri fiscale"])
+app.include_router(clients_router, prefix="/api/v1/clients", tags=["Clienți"])
 app.include_router(ws_router, tags=["WebSocket"])
 
 # Serve temp uploaded images as static files

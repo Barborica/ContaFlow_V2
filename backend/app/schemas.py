@@ -22,3 +22,20 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+
+class ClientCreate(BaseModel):
+    cui: str
+    name: str
+    address: Optional[str] = None
+
+
+class ClientResponse(BaseModel):
+    id: str
+    cui: str
+    name: str
+    address: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
