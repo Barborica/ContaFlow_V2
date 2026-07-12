@@ -71,7 +71,12 @@ class Receipt(Base):
     time = Column(Time, nullable=True)
     total_amount = Column(Float, nullable=True)
     image_path = Column(String, nullable=True)
-    status = Column(String, default="pending")  # pending/validated
+    status = Column(String, default="pending")  # processing/pending/validated
+
+    # Raw OCR data, unverified, kept until accountant validates
+    company_name = Column(String, nullable=True)  # supplier name read from receipt
+    supplier_cui = Column(String, nullable=True)  # first CUI on receipt (top)
+    client_cui = Column(String, nullable=True)  # second CUI on receipt (middle)
 
     client = relationship("Client", back_populates="receipts")
     supplier = relationship("Supplier", back_populates="receipts")

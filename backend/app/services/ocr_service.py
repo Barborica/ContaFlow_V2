@@ -6,13 +6,34 @@ from paddleocr import PaddleOCR
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize PaddleOCR model as a singleton
-logger.info("Initializing PaddleOCR model. This may take a few seconds...")
-ocr_model = PaddleOCR(use_textline_orientation=True, lang="ro")
+# Max image side (px) before OCR; receipts stay readable, OCR runs faster
+MAX_IMAGE_SIDE = 1600
+
+# PaddleOCR is not thread-safe: the model must be created and used on a single
+# thread only. Lazily initialized on first use from the dedicated OCR thread
+# (see processing.py). Disables doc unwarping/orientation models (slow, unneeded).
+_ocr_model = None
+
+
+def get_ocr_model() -> PaddleOCR:
+    """Return the shared PaddleOCR model, creating it on first call.
+
+    Must always be called from the same dedicated thread to avoid native crashes.
+    """
+    global _ocr_model
+    if _ocr_model is None:
+        logger.info("Initializing PaddleOCR model. This may take a few seconds...")
+        _ocr_model = PaddleOCR(
+            use_textline_orientation=True,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            lang="ro",
+        )
+    return _ocr_model
 
 
 def fix_image_orientation(image_path: str):
-    """Fix image rotation using EXIF metadata before OCR."""
+    """Fix rotation via EXIF and downscale large images before OCR."""
     try:
         img = Image.open(image_path)
         img_fixed = ImageOps.exif_transpose(img)
@@ -20,6 +41,11 @@ def fix_image_orientation(image_path: str):
         # Convert to RGB to prevent transparency issues
         if img_fixed.mode != "RGB":
             img_fixed = img_fixed.convert("RGB")
+
+        # Downscale oversized images to speed up OCR
+        if max(img_fixed.size) > MAX_IMAGE_SIDE:
+            img_fixed.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+            logger.info(f"Image downscaled to fit {MAX_IMAGE_SIDE}px max side.")
 
         img_fixed.save(image_path)
         logger.info("Image orientation corrected successfully.")
@@ -35,7 +61,7 @@ def extract_text_from_image(image_path: str) -> list:
         fix_image_orientation(image_path)
 
         # Run prediction using PaddleOCR v3.x API
-        result = ocr_model.predict(image_path)
+        result = get_ocr_model().predict(image_path)
         extracted_lines = []
 
         # Parse text lines with confidence score >= 60%

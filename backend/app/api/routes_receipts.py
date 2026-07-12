@@ -1,6 +1,5 @@
 import os
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
@@ -8,9 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.db.models import User, Receipt
 from app.api.deps import get_current_user
-from app.api.routes_ws import manager as ws_manager
-from app.services.ocr_service import extract_text_from_image
-from app.services.parser_service import parse_receipt_text
+from app.services.processing import receipt_queue
 
 router = APIRouter()
 
@@ -24,7 +21,7 @@ async def upload_receipt(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Save uploaded image to temp, run OCR, create pending receipt in DB."""
+    """Save uploaded image to temp, create processing receipt, enqueue for OCR."""
     # Validate file is an image
     content_type = file.content_type
     if not content_type or not content_type.startswith("image/"):
@@ -50,51 +47,24 @@ async def upload_receipt(
             status_code=500, detail="Eroare la salvarea imaginii pe server."
         )
 
-    # Run OCR pipeline
-    extracted_text = extract_text_from_image(file_path)
-    structured_data = parse_receipt_text(extracted_text)
-
-    # Parse date if available
-    receipt_date = None
-    if structured_data.get("date"):
-        try:
-            receipt_date = datetime.strptime(structured_data["date"], "%Y-%m-%d").date()
-        except ValueError:
-            pass
-
-    # Create pending receipt in DB
+    # Create receipt in "processing" state; OCR runs later in background worker
     new_receipt = Receipt(
         uploaded_by=str(current_user.id),
-        date=receipt_date,
-        total_amount=structured_data.get("total"),
         image_path=unique_filename,
-        status="pending",
+        status="processing",
     )
     db.add(new_receipt)
     db.commit()
     db.refresh(new_receipt)
 
-    response_data = {
-        "status": "success",
+    # Enqueue for sequential OCR processing and return immediately
+    await receipt_queue.put(new_receipt.id)
+
+    return {
+        "status": "accepted",
         "receipt_id": new_receipt.id,
-        "temp_path": unique_filename,
-        "parsed_data": {
-            "company_name": structured_data.get("company_name"),
-            "supplier_cui": structured_data.get("supplier_cui"),
-            "client_cui": structured_data.get("client_cui"),
-            "date": structured_data.get("date"),
-            "total": structured_data.get("total"),
-            "items": structured_data.get("items", []),
-        },
+        "message": "Bonul a fost primit și se procesează.",
     }
-
-    # Notify connected web clients via WebSocket
-    await ws_manager.broadcast({
-        "event": "new_receipt",
-        "data": response_data,
-    })
-
-    return response_data
 
 
 @router.get("/pending")
@@ -117,6 +87,46 @@ def get_pending_receipts(
             "date": str(r.date) if r.date else None,
             "total_amount": r.total_amount,
             "status": r.status,
+            "company_name": r.company_name,
+            "supplier_cui": r.supplier_cui,
+            "client_cui": r.client_cui,
         }
         for r in receipts
     ]
+
+
+@router.get("/{receipt_id}")
+def get_receipt(
+    receipt_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return a single receipt with all raw OCR data and line items."""
+    receipt = (
+        db.query(Receipt)
+        .filter(Receipt.id == receipt_id, Receipt.uploaded_by == current_user.id)
+        .first()
+    )
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Bonul nu a fost găsit.")
+
+    return {
+        "id": receipt.id,
+        "temp_path": receipt.image_path,
+        "status": receipt.status,
+        "date": str(receipt.date) if receipt.date else None,
+        "total_amount": receipt.total_amount,
+        "company_name": receipt.company_name,
+        "supplier_cui": receipt.supplier_cui,
+        "client_cui": receipt.client_cui,
+        "items": [
+            {
+                "id": item.id,
+                "description": item.description,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "total_price": item.total_price,
+            }
+            for item in receipt.items
+        ],
+    }

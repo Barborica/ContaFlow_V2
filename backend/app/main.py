@@ -1,4 +1,6 @@
+import asyncio
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,11 +9,23 @@ from app.api.routes_auth import router as auth_router
 from app.api.routes_system import router as system_router
 from app.api.routes_receipts import router as receipts_router
 from app.api.routes_ws import router as ws_router
+from app.services.processing import worker as processing_worker, warmup_ocr
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Warm up OCR model, start the background worker, cancel it on shutdown."""
+    await warmup_ocr()
+    task = asyncio.create_task(processing_worker())
+    yield
+    task.cancel()
+
 
 app = FastAPI(
     title="ContaFlow API",
     description="API for automating processing for SAGA",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 origins = [

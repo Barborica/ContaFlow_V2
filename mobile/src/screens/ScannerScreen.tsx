@@ -87,7 +87,10 @@ export default function ScannerScreen() {
         const result = await response.json();
 
         if (response.ok) {
-          Alert.alert("Succes", "Bonul a fost trimis către server!");
+          Alert.alert(
+            "Trimis",
+            "Bonul a fost trimis și se procesează. Poți poza următorul bon.",
+          );
         } else {
           Alert.alert(
             "Eroare Server",
