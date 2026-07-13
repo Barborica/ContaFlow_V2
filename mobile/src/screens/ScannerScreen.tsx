@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Text,
   View,
@@ -15,9 +15,52 @@ export default function ScannerScreen() {
   const [scanned, setScanned] = useState(false);
   const [connected, setConnected] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [activeClientName, setActiveClientName] = useState<string | null>(null);
+  const [activeClientCui, setActiveClientCui] = useState<string | null>(null);
 
   // Reference to the camera component to trigger picture capture
   const cameraRef = useRef<CameraView>(null);
+
+  // Fetch the active client selected on the web dashboard
+  useEffect(() => {
+    if (!connected) {
+      setActiveClientName(null);
+      setActiveClientCui(null);
+      return;
+    }
+
+    const loadActiveClient = async () => {
+      try {
+        const serverUrl = await SecureStore.getItemAsync("server_url");
+        const token = await SecureStore.getItemAsync("user_token");
+        if (!serverUrl || !token) return;
+
+        const response = await fetch(`${serverUrl}/api/v1/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) return;
+
+        const profile = await response.json();
+        if (profile.active_client_id) {
+          const clientsRes = await fetch(`${serverUrl}/api/v1/clients`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (clientsRes.ok) {
+            const clients = await clientsRes.json();
+            const found = clients.find((c: any) => c.id === profile.active_client_id);
+            if (found) {
+              setActiveClientName(found.name);
+              setActiveClientCui(found.cui);
+            }
+          }
+        }
+      } catch {
+        // Ignore errors; the upload endpoint will warn if no client is selected
+      }
+    };
+
+    loadActiveClient();
+  }, [connected]);
 
   if (!permission) return <View />;
   if (!permission.granted) {
@@ -89,7 +132,8 @@ export default function ScannerScreen() {
         if (response.ok) {
           Alert.alert(
             "Trimis",
-            "Bonul a fost trimis și se procesează. Poți poza următorul bon.",
+            result.message ||
+              "Bonul a fost trimis și se procesează. Poți poza următorul bon.",
           );
         } else {
           Alert.alert(
@@ -110,6 +154,21 @@ export default function ScannerScreen() {
     return (
       <View style={styles.container}>
         <Text style={styles.title}>Pozează Bonul Fiscal</Text>
+
+        {/* Active client context banner */}
+        <View
+          style={[
+            styles.clientBanner,
+            activeClientName ? styles.clientBannerActive : styles.clientBannerWarning,
+          ]}
+        >
+          <Text style={styles.clientBannerText}>
+            {activeClientName
+              ? `Client: ${activeClientName}${activeClientCui ? ` (${activeClientCui})` : ""}`
+              : "Atenție: niciun client activ selectat în dashboard."}
+          </Text>
+        </View>
+
         <View style={styles.barcodebox}>
           {/* QR code scanning is disabled; camera is only used for taking photos */}
           <CameraView
@@ -165,5 +224,24 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: "black",
     marginBottom: 20,
+  },
+  clientBanner: {
+    width: "100%",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    alignItems: "center",
+  },
+  clientBannerActive: {
+    backgroundColor: "rgba(34, 197, 94, 0.15)",
+  },
+  clientBannerWarning: {
+    backgroundColor: "rgba(245, 158, 11, 0.15)",
+  },
+  clientBannerText: {
+    fontSize: 14,
+    color: "#0f172a",
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

@@ -1,18 +1,97 @@
+import logging
 import os
+import re
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from PIL import Image
 from sqlalchemy.orm import Session
 
-from app.db.database import get_db
-from app.db.models import User, Receipt
 from app.api.deps import get_current_user
+from app.db.database import get_db
+from app.db.models import AuditLog, Client, Receipt, ReceiptItem, Supplier, User
+from app.schemas import ReceiptValidationRequest, ReceiptValidationResponse
 from app.services.processing import receipt_queue
 
 router = APIRouter()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TEMP_UPLOAD_DIR = os.path.join(BASE_DIR, "uploads", "temp")
+PERMANENT_UPLOAD_DIR = os.path.join(BASE_DIR, "uploads", "receipts")
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_cui(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.upper().replace(" ", "").replace(".", "")
+    normalized = re.sub(r"^(RO|R0)", "", normalized)
+    return re.sub(r"\D", "", normalized) or None
+
+
+def _ensure_supplier(
+    db: Session, supplier_cui: str | None, company_name: str | None
+) -> Supplier | None:
+    """Return existing supplier by CUI or create a new one from provided data."""
+    if not supplier_cui:
+        return None
+
+    supplier = (
+        db.query(Supplier)
+        .filter(Supplier.cui == _normalize_cui(supplier_cui))
+        .first()
+    )
+    if supplier:
+        return supplier
+
+    if not company_name:
+        return None
+
+    new_supplier = Supplier(
+        cui=_normalize_cui(supplier_cui),
+        name=company_name,
+    )
+    db.add(new_supplier)
+    db.commit()
+    db.refresh(new_supplier)
+    return new_supplier
+
+
+def _compress_and_move_image(temp_path: str, receipt_id: str, client_id: str | None) -> str:
+    """Compress the receipt image and move it to permanent storage."""
+    ext = os.path.splitext(temp_path)[1].lower() or ".jpg"
+    if ext not in (".jpg", ".jpeg"):
+        ext = ".jpg"
+
+    subdir = os.path.join(PERMANENT_UPLOAD_DIR, client_id) if client_id else PERMANENT_UPLOAD_DIR
+    os.makedirs(subdir, exist_ok=True)
+
+    permanent_filename = f"{receipt_id}{ext}"
+    permanent_path = os.path.join(subdir, permanent_filename)
+
+    with Image.open(temp_path) as img:
+        # Convert to RGB if needed (e.g. PNG with transparency)
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+
+        # Downscale very large images to keep storage reasonable
+        max_width = 2048
+        if img.width > max_width:
+            ratio = max_width / img.width
+            new_height = int(img.height * ratio)
+            img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+
+        img.save(permanent_path, "JPEG", quality=85, optimize=True)
+
+    # Remove the original temporary file
+    try:
+        os.remove(temp_path)
+    except OSError:
+        logger.warning(f"Could not remove temp image {temp_path}")
+
+    return permanent_filename
 
 
 @router.post("/upload")
@@ -47,9 +126,15 @@ async def upload_receipt(
             status_code=500, detail="Eroare la salvarea imaginii pe server."
         )
 
+    # Attach receipt to the currently selected client (if any).  The accountant
+    # chooses the active client on the web dashboard before scanning from the
+    # mobile app.
+    active_client_id = current_user.active_client_id
+
     # Create receipt in "processing" state; OCR runs later in background worker
     new_receipt = Receipt(
         uploaded_by=str(current_user.id),
+        client_id=active_client_id,
         image_path=unique_filename,
         status="processing",
     )
@@ -60,10 +145,14 @@ async def upload_receipt(
     # Enqueue for sequential OCR processing and return immediately
     await receipt_queue.put(new_receipt.id)
 
+    message = "Bonul a fost primit și se procesează."
+    if not active_client_id:
+        message += " Atentionare: niciun client activ selectat. Bonul va rămâne nealocat."
+
     return {
         "status": "accepted",
         "receipt_id": new_receipt.id,
-        "message": "Bonul a fost primit și se procesează.",
+        "message": message,
     }
 
 
@@ -129,4 +218,116 @@ def get_receipt(
             }
             for item in receipt.items
         ],
+    }
+
+
+@router.post("/{receipt_id}/validate", response_model=ReceiptValidationResponse)
+def validate_receipt(
+    receipt_id: str,
+    data: ReceiptValidationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Validate a pending receipt, verify supplier/client, persist and archive image."""
+    receipt = (
+        db.query(Receipt)
+        .filter(Receipt.id == receipt_id, Receipt.uploaded_by == current_user.id)
+        .first()
+    )
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Bonul nu a fost găsit.")
+
+    if receipt.status == "validated":
+        raise HTTPException(
+            status_code=409, detail="Bonul a fost deja validat."
+        )
+
+    if not receipt.client_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Bonul nu este alocat unui client. Selectați un client activ înainte de scanare.",
+        )
+
+    client = db.query(Client).filter(Client.id == receipt.client_id).first()
+    if not client or client.is_deleted:
+        raise HTTPException(
+            status_code=400,
+            detail="Clientul asociat bonului nu mai există.",
+        )
+
+    # Client CUI verification: the receipt's buyer CUI must match the selected client
+    normalized_client_cui = _normalize_cui(data.client_cui)
+    if normalized_client_cui and normalized_client_cui != _normalize_cui(client.cui):
+        raise HTTPException(
+            status_code=400,
+            detail="CUI-ul clientului de pe bon nu coincide cu clientul activ selectat.",
+        )
+
+    # Supplier existence / auto-create
+    supplier = _ensure_supplier(db, data.supplier_cui, data.company_name)
+
+    # Parse and validate date
+    receipt_date = None
+    if data.date:
+        try:
+            receipt_date = datetime.strptime(data.date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Data trebuie să fie în format AAAA-LL-ZZ."
+            )
+
+    # Archive and compress the image
+    temp_path = os.path.join(TEMP_UPLOAD_DIR, receipt.image_path or "")
+    new_image_path = receipt.image_path
+    if receipt.image_path and os.path.exists(temp_path):
+        new_image_path = _compress_and_move_image(
+            temp_path, receipt.id, receipt.client_id
+        )
+
+    # Replace line items with validated ones
+    db.query(ReceiptItem).filter(ReceiptItem.receipt_id == receipt.id).delete()
+    for item in data.items:
+        db.add(
+            ReceiptItem(
+                receipt_id=receipt.id,
+                description=item.description,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                total_price=item.total_price,
+            )
+        )
+
+    # Update receipt metadata
+    receipt.company_name = data.company_name
+    receipt.supplier_cui = _normalize_cui(data.supplier_cui)
+    receipt.client_cui = normalized_client_cui
+    receipt.date = receipt_date
+    receipt.total_amount = data.total_amount
+    receipt.supplier_id = supplier.id if supplier else None
+    receipt.status = "validated"
+    receipt.validated_at = datetime.now(timezone.utc)
+    receipt.image_path = new_image_path
+    db.commit()
+    db.refresh(receipt)
+
+    # Audit log
+    db.add(
+        AuditLog(
+            user_id=str(current_user.id),
+            action="validated",
+            target_type="receipt",
+            target_id=receipt.id,
+            details={
+                "supplier_cui": receipt.supplier_cui,
+                "client_cui": receipt.client_cui,
+                "client_id": receipt.client_id,
+            },
+        )
+    )
+    db.commit()
+
+    return {
+        "id": receipt.id,
+        "status": receipt.status,
+        "image_path": receipt.image_path,
     }

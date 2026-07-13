@@ -9,6 +9,7 @@ from app.api.routes_auth import router as auth_router
 from app.api.routes_system import router as system_router
 from app.api.routes_receipts import router as receipts_router
 from app.api.routes_clients import router as clients_router
+from app.api.routes_users import router as users_router
 from app.api.routes_lookup import router as lookup_router
 from app.api.routes_ws import router as ws_router
 from app.services.processing import worker as processing_worker, warmup_ocr
@@ -47,6 +48,7 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autentificare"])
 app.include_router(system_router, prefix="/api/v1/system", tags=["Sistem"])
 app.include_router(receipts_router, prefix="/api/v1/receipts", tags=["Bonuri fiscale"])
 app.include_router(clients_router, prefix="/api/v1/clients", tags=["Clienți"])
+app.include_router(users_router, prefix="/api/v1/users", tags=["Utilizatori"])
 app.include_router(lookup_router, prefix="/api/v1", tags=["Verificare firmă"])
 app.include_router(ws_router, tags=["WebSocket"])
 
@@ -54,6 +56,11 @@ app.include_router(ws_router, tags=["WebSocket"])
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads", "temp")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads/temp", StaticFiles(directory=UPLOAD_DIR), name="temp_uploads")
+
+# Serve validated receipt images as static files
+RECEIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads", "receipts")
+os.makedirs(RECEIPTS_DIR, exist_ok=True)
+app.mount("/uploads/receipts", StaticFiles(directory=RECEIPTS_DIR), name="receipt_uploads")
 
 
 @app.get("/")

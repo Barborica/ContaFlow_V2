@@ -28,7 +28,9 @@ export default function ValidationScreen({ navigation, route }: Props) {
   const { receiptId, token } = route.params;
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   // Editable form fields, prefilled from OCR data
@@ -74,10 +76,46 @@ export default function ValidationScreen({ navigation, route }: Props) {
     setClientCui(supplierCui);
   };
 
-  const handleValidate = () => {
-    setInfoMessage(
-      "În curând: salvarea validată (potrivire client/furnizor și verificări) va fi disponibilă în etapa următoare.",
-    );
+  const handleValidate = async () => {
+    setIsSaving(true);
+    setSaveError(null);
+    setInfoMessage(null);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/v1/receipts/${receiptId}/validate`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            company_name: companyName,
+            supplier_cui: supplierCui,
+            client_cui: clientCui,
+            date,
+            total_amount: total ? parseFloat(total) : null,
+            items: items.map((item) => ({
+              description: item.description,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              total_price: item.total_price,
+            })),
+          }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Eroare la validare.");
+      }
+      setInfoMessage("Bonul a fost validat și salvat.");
+      setTimeout(() => navigation.goBack(), 1200);
+    } catch (error: any) {
+      setSaveError(error.message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -208,11 +246,25 @@ export default function ValidationScreen({ navigation, route }: Props) {
             )}
 
             <TouchableOpacity
-              style={styles.validateButton}
+              style={[
+                styles.validateButton,
+                isSaving && styles.validateButtonDisabled,
+              ]}
               onPress={handleValidate}
+              disabled={isSaving}
             >
-              <Text style={styles.validateText}>Validează și salvează</Text>
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.validateText}>Validează și salvează</Text>
+              )}
             </TouchableOpacity>
+
+            {saveError && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorBoxText}>{saveError}</Text>
+              </View>
+            )}
 
             {infoMessage && (
               <View style={styles.infoBox}>
@@ -377,6 +429,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 24,
   },
+  validateButtonDisabled: {
+    opacity: 0.7,
+  },
   validateText: {
     color: "#fff",
     fontSize: 16,
@@ -392,6 +447,19 @@ const styles = StyleSheet.create({
   },
   infoText: {
     color: "#a5b4fc",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  errorBox: {
+    marginTop: 16,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+    borderRadius: 10,
+    padding: 12,
+  },
+  errorBoxText: {
+    color: "#f87171",
     fontSize: 13,
     textAlign: "center",
   },
