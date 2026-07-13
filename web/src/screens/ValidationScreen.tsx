@@ -15,13 +15,13 @@ import { API_BASE_URL } from "../config";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Validation">;
 
-// Receipt item shape returned by GET /receipts/{id}
+// Editable receipt item kept as strings for easier TextInput handling
 type ReceiptItem = {
   id: string;
   description: string | null;
-  quantity: number;
-  unit_price: number;
-  total_price: number;
+  quantity: string;
+  unit_price: string;
+  total_price: string;
 };
 
 export default function ValidationScreen({ navigation, route }: Props) {
@@ -35,6 +35,8 @@ export default function ValidationScreen({ navigation, route }: Props) {
 
   // Editable form fields, prefilled from OCR data
   const [imagePath, setImagePath] = useState<string | null>(null);
+  const [imageZoom, setImageZoom] = useState(1);
+  const [panelSize, setPanelSize] = useState<{ width: number; height: number } | null>(null);
   const [companyName, setCompanyName] = useState("");
   const [supplierCui, setSupplierCui] = useState("");
   const [clientCui, setClientCui] = useState("");
@@ -60,7 +62,17 @@ export default function ValidationScreen({ navigation, route }: Props) {
         setClientCui(data.client_cui || "");
         setDate(data.date || "");
         setTotal(data.total_amount != null ? String(data.total_amount) : "");
-        setItems(data.items || []);
+        setItems(
+          (data.items || []).map((item: any) => ({
+            id: item.id,
+            description: item.description || "",
+            quantity: item.quantity != null ? String(item.quantity) : "",
+            unit_price:
+              item.unit_price != null ? String(item.unit_price) : "",
+            total_price:
+              item.total_price != null ? String(item.total_price) : "",
+          }))
+        );
       } catch (error: any) {
         setErrorMessage(error.message);
       } finally {
@@ -74,6 +86,48 @@ export default function ValidationScreen({ navigation, route }: Props) {
   const handleSwitchCui = () => {
     setSupplierCui(clientCui);
     setClientCui(supplierCui);
+  };
+
+  const recalcTotal = (nextItems: ReceiptItem[]) => {
+    const sum = nextItems.reduce((acc, item) => {
+      return acc + (parseFloat(item.total_price) || 0);
+    }, 0);
+    setTotal(sum.toFixed(2));
+  };
+
+  const updateItem = (
+    id: string,
+    field: keyof ReceiptItem,
+    value: string
+  ) => {
+    setItems((prev) => {
+      const next = prev.map((item) =>
+        item.id === id ? { ...item, [field]: value } : item
+      );
+      recalcTotal(next);
+      return next;
+    });
+  };
+
+  const addItem = () => {
+    setItems((prev) => [
+      ...prev,
+      {
+        id: `new-${Date.now()}`,
+        description: "",
+        quantity: "1",
+        unit_price: "",
+        total_price: "",
+      },
+    ]);
+  };
+
+  const removeItem = (id: string) => {
+    setItems((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      recalcTotal(next);
+      return next;
+    });
   };
 
   const handleValidate = async () => {
@@ -98,9 +152,9 @@ export default function ValidationScreen({ navigation, route }: Props) {
             total_amount: total ? parseFloat(total) : null,
             items: items.map((item) => ({
               description: item.description,
-              quantity: item.quantity,
-              unit_price: item.unit_price,
-              total_price: item.total_price,
+              quantity: parseFloat(item.quantity) || 0,
+              unit_price: parseFloat(item.unit_price) || 0,
+              total_price: parseFloat(item.total_price) || 0,
             })),
           }),
         },
@@ -141,17 +195,59 @@ export default function ValidationScreen({ navigation, route }: Props) {
         </View>
       ) : (
         <View style={styles.split}>
-          {/* Left: receipt image */}
+          {/* Left: receipt image with in-place zoom/pan */}
           <View style={styles.imagePanel}>
-            {imagePath ? (
-              <Image
-                source={{ uri: `${API_BASE_URL}/uploads/temp/${imagePath}` }}
-                style={styles.image}
-                resizeMode="contain"
-              />
-            ) : (
-              <Text style={styles.emptyText}>Imagine indisponibilă</Text>
-            )}
+            <View
+              style={styles.imageViewport}
+              onLayout={(event) => setPanelSize(event.nativeEvent.layout)}
+            >
+              {imagePath && panelSize ? (
+                <View
+                  style={[
+                    styles.panContainer,
+                    {
+                      width: panelSize.width,
+                      height: panelSize.height,
+                      overflow: "auto" as any,
+                    },
+                  ]}
+                >
+                  <Image
+                    source={{ uri: `${API_BASE_URL}/uploads/temp/${imagePath}` }}
+                    style={{
+                      width: panelSize.width * imageZoom,
+                      height: panelSize.height * imageZoom,
+                    }}
+                    resizeMode="contain"
+                  />
+                </View>
+              ) : (
+                <Text style={styles.emptyText}>Imagine indisponibilă</Text>
+              )}
+            </View>
+
+            {/* Zoom controls */}
+            <View style={styles.zoomControls}>
+              <TouchableOpacity
+                style={styles.zoomButton}
+                onPress={() => setImageZoom((z) => Math.max(z - 0.25, 0.5))}
+              >
+                <Text style={styles.zoomButtonText}>−</Text>
+              </TouchableOpacity>
+              <Text style={styles.zoomLevel}>{Math.round(imageZoom * 100)}%</Text>
+              <TouchableOpacity
+                style={styles.zoomButton}
+                onPress={() => setImageZoom((z) => Math.min(z + 0.25, 3))}
+              >
+                <Text style={styles.zoomButtonText}>+</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.zoomButton}
+                onPress={() => setImageZoom(1)}
+              >
+                <Text style={styles.zoomButtonText}>⟲</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Right: editable form */}
@@ -228,19 +324,69 @@ export default function ValidationScreen({ navigation, route }: Props) {
             </View>
 
             {/* Line items */}
-            <Text style={styles.label}>Produse</Text>
+            <View style={styles.itemsHeader}>
+              <Text style={styles.label}>Produse</Text>
+              <TouchableOpacity onPress={addItem}>
+                <Text style={styles.addItemText}>+ Adaugă produs</Text>
+              </TouchableOpacity>
+            </View>
+
             {items.length === 0 ? (
               <Text style={styles.emptyItems}>Niciun produs detectat.</Text>
             ) : (
               items.map((item) => (
                 <View key={item.id} style={styles.itemRow}>
-                  <Text style={styles.itemDesc}>
-                    {item.description || "Produs"}
-                  </Text>
-                  <Text style={styles.itemCalc}>
-                    {item.quantity} × {item.unit_price.toFixed(2)} ={" "}
-                    {item.total_price.toFixed(2)}
-                  </Text>
+                  <View style={styles.itemInputs}>
+                    <TextInput
+                      style={[styles.input, styles.itemDescInput]}
+                      value={item.description || ""}
+                      onChangeText={(value) =>
+                        updateItem(item.id, "description", value)
+                      }
+                      placeholder="Descriere produs"
+                      placeholderTextColor="#64748b"
+                    />
+                    <View style={styles.itemNumbers}>
+                      <TextInput
+                        style={[styles.input, styles.itemNumberInput]}
+                        value={item.quantity}
+                        onChangeText={(value) =>
+                          updateItem(item.id, "quantity", value)
+                        }
+                        keyboardType="decimal-pad"
+                        placeholder="Qty"
+                        placeholderTextColor="#64748b"
+                      />
+                      <Text style={styles.itemX}>×</Text>
+                      <TextInput
+                        style={[styles.input, styles.itemNumberInput]}
+                        value={item.unit_price}
+                        onChangeText={(value) =>
+                          updateItem(item.id, "unit_price", value)
+                        }
+                        keyboardType="decimal-pad"
+                        placeholder="Preț"
+                        placeholderTextColor="#64748b"
+                      />
+                      <Text style={styles.itemX}>=</Text>
+                      <TextInput
+                        style={[styles.input, styles.itemNumberInput]}
+                        value={item.total_price}
+                        onChangeText={(value) =>
+                          updateItem(item.id, "total_price", value)
+                        }
+                        keyboardType="decimal-pad"
+                        placeholder="Total"
+                        placeholderTextColor="#64748b"
+                      />
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.removeItemButton}
+                    onPress={() => removeItem(item.id)}
+                  >
+                    <Text style={styles.removeItemText}>✕</Text>
+                  </TouchableOpacity>
                 </View>
               ))
             )}
@@ -274,6 +420,7 @@ export default function ValidationScreen({ navigation, route }: Props) {
           </ScrollView>
         </View>
       )}
+
     </View>
   );
 }
@@ -328,13 +475,18 @@ const styles = StyleSheet.create({
   imagePanel: {
     flex: 1,
     backgroundColor: "#020617",
+    padding: 24,
+    overflow: "hidden",
+  },
+  imageViewport: {
+    flex: 1,
+    width: "100%",
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
   },
-  image: {
+  panContainer: {
+    flex: 1,
     width: "100%",
-    height: "100%",
   },
   emptyText: {
     color: "#64748b",
@@ -402,24 +554,63 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 16,
   },
-  itemRow: {
+  itemsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  addItemText: {
+    color: "#34d399",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  itemRow: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#1e293b",
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: "#334155",
+    gap: 10,
   },
-  itemDesc: {
-    color: "#e2e8f0",
-    fontSize: 14,
+  itemInputs: {
     flex: 1,
+    gap: 10,
   },
-  itemCalc: {
+  itemDescInput: {
+    height: 40,
+  },
+  itemNumbers: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  itemNumberInput: {
+    height: 40,
+    flex: 1,
+    minWidth: 60,
+    textAlign: "center",
+  },
+  itemX: {
     color: "#94a3b8",
-    fontSize: 13,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  removeItemButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  removeItemText: {
+    color: "#f87171",
+    fontSize: 14,
+    fontWeight: "700",
   },
   validateButton: {
     height: 50,
@@ -461,6 +652,40 @@ const styles = StyleSheet.create({
   errorBoxText: {
     color: "#f87171",
     fontSize: 13,
+    textAlign: "center",
+  },
+  zoomControls: {
+    position: "absolute",
+    bottom: 24,
+    right: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    borderRadius: 12,
+    padding: 8,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#334155",
+    zIndex: 10,
+  },
+  zoomButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#1e293b",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  zoomButtonText: {
+    color: "#e2e8f0",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  zoomLevel: {
+    color: "#cbd5e1",
+    fontSize: 13,
+    fontWeight: "600",
+    minWidth: 42,
     textAlign: "center",
   },
 });
