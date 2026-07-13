@@ -6,11 +6,17 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import LoginScreen from "./src/screens/LoginScreen";
 import DashboardScreen from "./src/screens/DashboardScreen";
 import ValidationScreen from "./src/screens/ValidationScreen";
+import ConnectionScreen from "./src/screens/ConnectionScreen";
+import ClientsScreen from "./src/screens/ClientsScreen";
+import ClientDashboardScreen from "./src/screens/ClientDashboardScreen";
 
 // Define route types and their parameters for autocomplete and type safety
 export type RootStackParamList = {
   Login: undefined;
   Dashboard: { token: string; serverUrl: string };
+  Connection: { token: string; serverUrl: string };
+  Clients: { token: string; serverUrl: string };
+  ClientDashboard: { clientId: string; token: string; serverUrl: string };
   Validation: { receiptId: string; serverUrl: string; token: string };
 };
 
@@ -56,6 +62,9 @@ export default function App() {
           component={DashboardScreen}
           initialParams={savedSession ?? undefined}
         />
+        <Stack.Screen name="Connection" component={ConnectionScreen} />
+        <Stack.Screen name="Clients" component={ClientsScreen} />
+        <Stack.Screen name="ClientDashboard" component={ClientDashboardScreen} />
         <Stack.Screen name="Validation" component={ValidationScreen} />
       </Stack.Navigator>
     </NavigationContainer>

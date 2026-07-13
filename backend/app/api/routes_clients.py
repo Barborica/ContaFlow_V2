@@ -3,7 +3,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.db.models import User, Client
+from app.db.models import Receipt, User, Client
 from app.api.deps import get_current_user
 from app.schemas import ClientCreate, ClientResponse
 
@@ -58,6 +58,36 @@ def create_client(
     db.commit()
     db.refresh(new_client)
     return new_client
+
+
+@router.get("/{client_id}/stats")
+def get_client_stats(
+    client_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return receipt statistics for a single client."""
+    client = db.query(Client).filter(Client.id == client_id, Client.is_deleted == False).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Clientul nu a fost găsit.")
+
+    base_query = db.query(Receipt).filter(
+        Receipt.client_id == client_id,
+        Receipt.uploaded_by == current_user.id,
+    )
+
+    pending = base_query.filter(Receipt.status == "pending").all()
+    validated = base_query.filter(Receipt.status == "validated").all()
+
+    return {
+        "client_id": client_id,
+        "client_name": client.name,
+        "client_cui": client.cui,
+        "pending_count": len(pending),
+        "pending_total": round(sum(r.total_amount or 0 for r in pending), 2),
+        "validated_count": len(validated),
+        "validated_total": round(sum(r.total_amount or 0 for r in validated), 2),
+    }
 
 
 @router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)

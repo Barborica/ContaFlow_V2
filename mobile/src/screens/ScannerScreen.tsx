@@ -21,6 +21,70 @@ export default function ScannerScreen() {
   // Reference to the camera component to trigger picture capture
   const cameraRef = useRef<CameraView>(null);
 
+  // Keep a WebSocket connection open so the dashboard sees the phone as connected
+  useEffect(() => {
+    if (!connected) {
+      setActiveClientName(null);
+      setActiveClientCui(null);
+      return;
+    }
+
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: NodeJS.Timeout;
+
+    const connect = async () => {
+      const serverUrl = await SecureStore.getItemAsync("server_url");
+      if (!serverUrl) return;
+      const wsUrl = `${serverUrl.replace(/^http/, "ws")}/ws?role=phone`;
+
+      try {
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          // connection registered on the server
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "active_client_changed") {
+              if (msg.client_id) {
+                setActiveClientName(msg.client_name || null);
+                setActiveClientCui(msg.client_cui || null);
+              } else {
+                setActiveClientName(null);
+                setActiveClientCui(null);
+              }
+            }
+          } catch {
+            // ignore malformed messages
+          }
+        };
+
+        ws.onclose = () => {
+          ws = null;
+          reconnectTimeout = setTimeout(connect, 3000);
+        };
+
+        ws.onerror = () => {
+          ws?.close();
+        };
+      } catch {
+        reconnectTimeout = setTimeout(connect, 3000);
+      }
+    };
+
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimeout);
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
+    };
+  }, [connected]);
+
   // Fetch the active client selected on the web dashboard
   useEffect(() => {
     if (!connected) {

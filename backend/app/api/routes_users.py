@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.api.routes_ws import manager as ws_manager
 from app.db.database import get_db
 from app.db.models import Client, User
 from app.schemas import UserActiveClientUpdate, UserResponse
@@ -20,6 +21,7 @@ def get_current_user_profile(
 @router.put("/me/active-client", response_model=UserResponse)
 def set_active_client(
     update: UserActiveClientUpdate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -42,4 +44,19 @@ def set_active_client(
     current_user.active_client_id = update.client_id or None
     db.commit()
     db.refresh(current_user)
+
+    # Notify all connected clients that the active client changed
+    client_name = client.name if update.client_id else None
+    client_cui = client.cui if update.client_id else None
+
+    background_tasks.add_task(
+        ws_manager.broadcast,
+        {
+            "type": "active_client_changed",
+            "client_id": update.client_id,
+            "client_name": client_name,
+            "client_cui": client_cui,
+        },
+    )
+
     return current_user

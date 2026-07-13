@@ -38,6 +38,7 @@ export default function DashboardScreen({ navigation, route }: Props) {
   const { token, serverUrl } = route.params;
   const [pendingReceipts, setPendingReceipts] = useState<PendingReceipt[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
+  const [phoneConnected, setPhoneConnected] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
   const [activeClient, setActiveClient] = useState<Client | null>(null);
   const [showClientPicker, setShowClientPicker] = useState(false);
@@ -48,13 +49,32 @@ export default function DashboardScreen({ navigation, route }: Props) {
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [createClientError, setCreateClientError] = useState<string | null>(null);
   const [isLoadingClients, setIsLoadingClients] = useState(true);
+  const [lanServerUrl, setLanServerUrl] = useState<string>(serverUrl);
   const wsRef = useRef<WebSocket | null>(null);
 
-  // QR Code payload for mobile client
+  // QR Code payload for mobile client uses the LAN IP so the phone can reach the backend
   const qrPayload = JSON.stringify({
-    server_url: serverUrl,
+    server_url: lanServerUrl,
     token: token,
   });
+
+  // Fetch LAN network info for the QR code
+  useEffect(() => {
+    const fetchNetworkInfo = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/v1/system/network-info`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setLanServerUrl(`http://${data.local_ip}:${data.port}`);
+        }
+      } catch {
+        // keep default serverUrl
+      }
+    };
+    fetchNetworkInfo();
+  }, [token]);
 
   // Load client list and active client selection
   useEffect(() => {
@@ -155,8 +175,7 @@ export default function DashboardScreen({ navigation, route }: Props) {
 
   // Connect to WebSocket on mount, disconnect on unmount
   useEffect(() => {
-    // WebSocket connects via localhost (same machine), not LAN IP
-    const wsUrl = `${WS_BASE_URL}/ws`;
+    const wsUrl = `${WS_BASE_URL}/ws?role=web`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -168,7 +187,15 @@ export default function DashboardScreen({ navigation, route }: Props) {
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        if (message.event === "new_receipt") {
+        if (message.type === "status") {
+          setPhoneConnected(Boolean(message.phone_connected));
+        } else if (message.type === "active_client_changed") {
+          if (message.client_id) {
+            setActiveClient({ id: message.client_id, name: message.client_name, cui: message.client_cui });
+          } else {
+            setActiveClient(null);
+          }
+        } else if (message.event === "new_receipt") {
           // Prepend new receipt to the list
           setPendingReceipts((prev) => [message.data, ...prev]);
         }
@@ -179,6 +206,7 @@ export default function DashboardScreen({ navigation, route }: Props) {
 
     ws.onclose = () => {
       setWsConnected(false);
+      setPhoneConnected(false);
     };
 
     ws.onerror = () => {
@@ -245,16 +273,44 @@ export default function DashboardScreen({ navigation, route }: Props) {
           <Text style={styles.headerSubtitle}>Panou de Control</Text>
         </View>
         <View style={styles.headerRight}>
-          {/* WebSocket connection status indicator */}
-          <View
-            style={[
-              styles.statusDot,
-              { backgroundColor: wsConnected ? "#34d399" : "#f87171" },
-            ]}
-          />
-          <Text style={styles.statusText}>
-            {wsConnected ? "Conectat" : "Deconectat"}
-          </Text>
+          {/* Backend status */}
+          <View style={styles.statusItem}>
+            <View
+              style={[
+                styles.statusDot,
+                { backgroundColor: wsConnected ? "#34d399" : "#f87171" },
+              ]}
+            />
+            <Text style={styles.statusText}>
+              {wsConnected ? "Backend" : "Backend"}
+            </Text>
+          </View>
+
+          {/* Phone status */}
+          <View style={styles.statusItem}>
+            <View
+              style={[
+                styles.statusDot,
+                { backgroundColor: phoneConnected ? "#34d399" : "#f87171" },
+              ]}
+            />
+            <Text style={styles.statusText}>
+              {phoneConnected ? "Telefon" : "Telefon"}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.connectionButton}
+            onPress={() => navigation.navigate("Clients", { token, serverUrl })}
+          >
+            <Text style={styles.connectionButtonText}>Clienți</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.connectionButton}
+            onPress={() => navigation.navigate("Connection", { token, serverUrl })}
+          >
+            <Text style={styles.connectionButtonText}>Conexiune</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <Text style={styles.logoutText}>Deconectare</Text>
           </TouchableOpacity>
@@ -522,15 +578,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  statusItem: {
+    alignItems: "center",
+    marginRight: 14,
+  },
   statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    marginBottom: 4,
   },
   statusText: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#94a3b8",
-    marginRight: 12,
+  },
+  connectionButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: "rgba(99, 102, 241, 0.12)",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.3)",
+    marginRight: 10,
+  },
+  connectionButtonText: {
+    color: "#a5b4fc",
+    fontSize: 13,
+    fontWeight: "600",
   },
   logoutButton: {
     paddingHorizontal: 16,

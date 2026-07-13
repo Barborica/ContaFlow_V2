@@ -158,16 +158,18 @@ async def upload_receipt(
 
 @router.get("/pending")
 def get_pending_receipts(
+    client_id: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return all pending receipts for the current user."""
-    receipts = (
-        db.query(Receipt)
-        .filter(Receipt.uploaded_by == current_user.id, Receipt.status == "pending")
-        .order_by(Receipt.id.desc())
-        .all()
+    """Return pending receipts for the current user, optionally filtered by client."""
+    query = db.query(Receipt).filter(
+        Receipt.uploaded_by == current_user.id, Receipt.status == "pending"
     )
+    if client_id:
+        query = query.filter(Receipt.client_id == client_id)
+
+    receipts = query.order_by(Receipt.id.desc()).all()
 
     return [
         {
@@ -179,6 +181,7 @@ def get_pending_receipts(
             "company_name": r.company_name,
             "supplier_cui": r.supplier_cui,
             "client_cui": r.client_cui,
+            "client_id": r.client_id,
         }
         for r in receipts
     ]
