@@ -39,3 +39,10 @@ class ClientResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CompanyInfoResponse(BaseModel):
+    cui: str
+    name: str
+    address: Optional[str] = None
+    source: str = "lista-firme.info"
