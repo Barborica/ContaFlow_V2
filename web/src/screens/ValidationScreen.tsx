@@ -35,6 +35,7 @@ export default function ValidationScreen({ navigation, route }: Props) {
 
   // Editable form fields, prefilled from OCR data
   const [imagePath, setImagePath] = useState<string | null>(null);
+  const [receiptStatus, setReceiptStatus] = useState("");
   const [imageZoom, setImageZoom] = useState(1);
   const [panelSize, setPanelSize] = useState<{ width: number; height: number } | null>(null);
   const [companyName, setCompanyName] = useState("");
@@ -56,7 +57,8 @@ export default function ValidationScreen({ navigation, route }: Props) {
         if (!response.ok) {
           throw new Error(data.detail || "Eroare la încărcarea bonului.");
         }
-        setImagePath(data.temp_path);
+        setImagePath(data.image_url || null);
+        setReceiptStatus(data.status || "");
         setCompanyName(data.company_name || "");
         setSupplierCui(data.supplier_cui || "");
         setClientCui(data.client_cui || "");
@@ -195,7 +197,11 @@ export default function ValidationScreen({ navigation, route }: Props) {
       if (!response.ok) {
         throw new Error(data.detail || "Eroare la validare.");
       }
-      setInfoMessage("Bonul a fost validat și salvat.");
+      setInfoMessage(
+        receiptStatus === "validated"
+          ? "Modificările au fost salvate."
+          : "Bonul a fost validat și salvat.",
+      );
       setTimeout(() => navigation.goBack(), 1200);
     } catch (error: any) {
       setSaveError(error.message);
@@ -245,7 +251,7 @@ export default function ValidationScreen({ navigation, route }: Props) {
                   ]}
                 >
                   <Image
-                    source={{ uri: `${API_BASE_URL}/uploads/temp/${imagePath}` }}
+                    source={{ uri: `${API_BASE_URL}${imagePath}` }}
                     style={{
                       width: panelSize.width * imageZoom,
                       height: panelSize.height * imageZoom,
@@ -423,13 +429,15 @@ export default function ValidationScreen({ navigation, route }: Props) {
               ))
             )}
 
-            <TouchableOpacity
-              style={[styles.deleteButton, isSaving && styles.validateButtonDisabled]}
-              onPress={handleDeleteReceipt}
-              disabled={isSaving}
-            >
-              <Text style={styles.deleteButtonText}>Șterge bonul</Text>
-            </TouchableOpacity>
+            {receiptStatus === "pending" && (
+              <TouchableOpacity
+                style={[styles.deleteButton, isSaving && styles.validateButtonDisabled]}
+                onPress={handleDeleteReceipt}
+                disabled={isSaving}
+              >
+                <Text style={styles.deleteButtonText}>Șterge bonul</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={[
@@ -442,7 +450,9 @@ export default function ValidationScreen({ navigation, route }: Props) {
               {isSaving ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
-                <Text style={styles.validateText}>Validează și salvează</Text>
+                <Text style={styles.validateText}>
+                  {receiptStatus === "validated" ? "Salvează modificările" : "Validează și salvează"}
+                </Text>
               )}
             </TouchableOpacity>
 

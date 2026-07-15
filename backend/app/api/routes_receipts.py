@@ -187,6 +187,31 @@ def get_pending_receipts(
     ]
 
 
+@router.get("/validated")
+def get_validated_receipts(
+    client_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return validated receipts for the current user, optionally by client."""
+    query = db.query(Receipt).filter(
+        Receipt.uploaded_by == current_user.id, Receipt.status == "validated"
+    )
+    if client_id:
+        query = query.filter(Receipt.client_id == client_id)
+
+    return [
+        {
+            "id": receipt.id,
+            "date": str(receipt.date) if receipt.date else None,
+            "total_amount": receipt.total_amount,
+            "company_name": receipt.company_name,
+            "supplier_cui": receipt.supplier_cui,
+        }
+        for receipt in query.order_by(Receipt.validated_at.desc()).all()
+    ]
+
+
 @router.get("/{receipt_id}")
 def get_receipt(
     receipt_id: str,
@@ -202,9 +227,16 @@ def get_receipt(
     if not receipt:
         raise HTTPException(status_code=404, detail="Bonul nu a fost găsit.")
 
+    image_url = None
+    if receipt.image_path:
+        if receipt.status == "validated":
+            image_url = f"/uploads/receipts/{receipt.client_id}/{receipt.image_path}"
+        else:
+            image_url = f"/uploads/temp/{receipt.image_path}"
+
     return {
         "id": receipt.id,
-        "temp_path": receipt.image_path,
+        "image_url": image_url,
         "status": receipt.status,
         "date": str(receipt.date) if receipt.date else None,
         "total_amount": receipt.total_amount,
@@ -271,9 +303,9 @@ def validate_receipt(
     if not receipt:
         raise HTTPException(status_code=404, detail="Bonul nu a fost găsit.")
 
-    if receipt.status == "validated":
+    if receipt.status not in ("pending", "validated"):
         raise HTTPException(
-            status_code=409, detail="Bonul a fost deja validat."
+            status_code=409, detail="Bonul nu poate fi modificat în starea curentă."
         )
 
     if not receipt.client_id:
@@ -310,10 +342,10 @@ def validate_receipt(
                 status_code=400, detail="Data trebuie să fie în format AAAA-LL-ZZ."
             )
 
-    # Archive and compress the image
+    # Archive and compress the image only on the initial validation.
     temp_path = os.path.join(TEMP_UPLOAD_DIR, receipt.image_path or "")
     new_image_path = receipt.image_path
-    if receipt.image_path and os.path.exists(temp_path):
+    if receipt.status == "pending" and receipt.image_path and os.path.exists(temp_path):
         new_image_path = _compress_and_move_image(
             temp_path, receipt.id, receipt.client_id
         )
@@ -339,7 +371,8 @@ def validate_receipt(
     receipt.total_amount = data.total_amount
     receipt.supplier_id = supplier.id if supplier else None
     receipt.status = "validated"
-    receipt.validated_at = datetime.now(timezone.utc)
+    if receipt.validated_at is None:
+        receipt.validated_at = datetime.now(timezone.utc)
     receipt.image_path = new_image_path
     db.commit()
     db.refresh(receipt)

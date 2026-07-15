@@ -36,6 +36,7 @@ export default function ClientDashboardScreen({ navigation, route }: Props) {
 
   const [stats, setStats] = useState<Stats | null>(null);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [validatedReceipts, setValidatedReceipts] = useState<Receipt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeMsg, setActiveMsg] = useState<string | null>(null);
@@ -43,20 +44,24 @@ export default function ClientDashboardScreen({ navigation, route }: Props) {
   useEffect(() => {
     const load = async () => {
       try {
-        const [statsRes, receiptsRes] = await Promise.all([
+        const [statsRes, receiptsRes, validatedRes] = await Promise.all([
           fetch(`${API_BASE_URL}/api/v1/clients/${clientId}/stats`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
           fetch(`${API_BASE_URL}/api/v1/receipts/pending?client_id=${clientId}`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
+          fetch(`${API_BASE_URL}/api/v1/receipts/validated?client_id=${clientId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
         ]);
 
         if (!statsRes.ok) throw new Error("Nu am putut încărca statisticile clientului.");
-        if (!receiptsRes.ok) throw new Error("Nu am putut încărca bonurile.");
+        if (!receiptsRes.ok || !validatedRes.ok) throw new Error("Nu am putut încărca bonurile.");
 
         setStats(await statsRes.json());
         setReceipts(await receiptsRes.json());
+        setValidatedReceipts(await validatedRes.json());
       } catch (err: any) {
         setError(err.message || "Eroare la încărcarea dashboard-ului.");
       } finally {
@@ -64,7 +69,8 @@ export default function ClientDashboardScreen({ navigation, route }: Props) {
       }
     };
     load();
-  }, [clientId, token]);
+    return navigation.addListener("focus", load);
+  }, [clientId, navigation, token]);
 
   const setActiveClient = async () => {
     try {
@@ -185,6 +191,47 @@ export default function ClientDashboardScreen({ navigation, route }: Props) {
                       : "—"}
                   </Text>
                   <Text style={styles.receiptArrow}>→</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Bonuri validate</Text>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{validatedReceipts.length}</Text>
+            </View>
+          </View>
+
+          {validatedReceipts.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>Niciun bon validat pentru acest client.</Text>
+            </View>
+          ) : (
+            validatedReceipts.map((receipt) => (
+              <TouchableOpacity
+                key={receipt.id}
+                style={styles.receiptCard}
+                onPress={() => openReceipt(receipt)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.receiptInfo}>
+                  <Text style={styles.receiptSupplier}>
+                    {receipt.company_name || receipt.supplier_cui || "Furnizor nedetectat"}
+                  </Text>
+                  <Text style={styles.receiptDate}>
+                    {receipt.date || "Dată nedetectată"}
+                  </Text>
+                </View>
+                <View style={styles.receiptRight}>
+                  <Text style={styles.receiptTotal}>
+                    {receipt.total_amount != null
+                      ? `${receipt.total_amount.toFixed(2)} LEI`
+                      : "—"}
+                  </Text>
+                  <Text style={styles.receiptArrow}>Editează</Text>
                 </View>
               </TouchableOpacity>
             ))
