@@ -12,6 +12,7 @@ import QRCode from "react-qr-code";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../App";
 import { API_BASE_URL, WS_BASE_URL } from "../config";
+import { usePhoneConnection } from "../contexts/PhoneConnectionContext";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Dashboard">;
 
@@ -38,7 +39,7 @@ export default function DashboardScreen({ navigation, route }: Props) {
   const { token, serverUrl } = route.params;
   const [pendingReceipts, setPendingReceipts] = useState<PendingReceipt[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
-  const [phoneConnected, setPhoneConnected] = useState(false);
+  const { phoneConnected } = usePhoneConnection();
   const [clients, setClients] = useState<Client[]>([]);
   const [activeClient, setActiveClient] = useState<Client | null>(null);
   const [showClientPicker, setShowClientPicker] = useState(false);
@@ -175,7 +176,7 @@ export default function DashboardScreen({ navigation, route }: Props) {
 
   // Connect to WebSocket on mount, disconnect on unmount
   useEffect(() => {
-    const wsUrl = `${WS_BASE_URL}/ws?role=web`;
+    const wsUrl = `${WS_BASE_URL}/ws?role=web&token=${encodeURIComponent(token)}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -188,7 +189,7 @@ export default function DashboardScreen({ navigation, route }: Props) {
       try {
         const message = JSON.parse(event.data);
         if (message.type === "status") {
-          setPhoneConnected(Boolean(message.phone_connected));
+          // Phone status is maintained application-wide by PhoneConnectionProvider.
         } else if (message.type === "active_client_changed") {
           if (message.client_id) {
             setActiveClient({ id: message.client_id, name: message.client_name, cui: message.client_cui });
@@ -206,7 +207,6 @@ export default function DashboardScreen({ navigation, route }: Props) {
 
     ws.onclose = () => {
       setWsConnected(false);
-      setPhoneConnected(false);
     };
 
     ws.onerror = () => {
@@ -366,29 +366,30 @@ export default function DashboardScreen({ navigation, route }: Props) {
           </View>
         </View>
 
-        {/* QR Code Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Conectare Telefon</Text>
-          <Text style={styles.sectionDescription}>
-            Scanează codul de mai jos cu aplicația ContaFlow de pe telefon
-            pentru a începe fotografierea bonurilor fiscale.
-          </Text>
-
-          <View style={styles.qrCard}>
-            <View style={styles.qrWrapper}>
-              <QRCode
-                value={qrPayload}
-                size={200}
-                bgColor="#ffffff"
-                fgColor="#0f172a"
-              />
-            </View>
-            <Text style={styles.qrHint}>
-              Codul conține token-ul tău securizat.{"\n"}Se regenerează la
-              fiecare autentificare.
+        {!phoneConnected && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Conectare Telefon</Text>
+            <Text style={styles.sectionDescription}>
+              Scanează codul de mai jos cu aplicația ContaFlow de pe telefon
+              pentru a începe fotografierea bonurilor fiscale.
             </Text>
+
+            <View style={styles.qrCard}>
+              <View style={styles.qrWrapper}>
+                <QRCode
+                  value={qrPayload}
+                  size={200}
+                  bgColor="#ffffff"
+                  fgColor="#0f172a"
+                />
+              </View>
+              <Text style={styles.qrHint}>
+                Codul conține token-ul tău securizat.{"\n"}Se regenerează la
+                fiecare autentificare.
+              </Text>
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Pending Receipts Section */}
         <View style={styles.section}>

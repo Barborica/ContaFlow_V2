@@ -15,7 +15,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Connection">;
 
 export default function ConnectionScreen({ route, navigation }: Props) {
   const { token, serverUrl } = route.params;
-  const wsUrl = `${serverUrl.replace(/^http/, "ws")}/ws?role=web`;
+  const wsUrl = `${serverUrl.replace(/^http/, "ws")}/ws?role=web&token=${encodeURIComponent(token)}`;
 
   const [networkInfo, setNetworkInfo] = useState<{ local_ip: string; port: number } | null>(null);
   const [qrSource, setQrSource] = useState<string | null>(null);

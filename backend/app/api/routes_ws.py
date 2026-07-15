@@ -23,12 +23,18 @@ class ConnectionManager:
         return any(role == "phone" for role, _ in self.connections.values())
 
     async def _broadcast_status(self):
-        """Broadcast the current phone status to every connected web client."""
-        payload = json.dumps(
-            {"type": "status", "phone_connected": self._phone_connected()}
-        )
         disconnected: list[WebSocket] = []
-        for connection in list(self.connections.keys()):
+        phone_user_ids = {
+            user_id
+            for role, user_id in self.connections.values()
+            if role == "phone" and user_id
+        }
+        for connection, (role, user_id) in list(self.connections.items()):
+            if role != "web":
+                continue
+            payload = json.dumps(
+                {"type": "status", "phone_connected": user_id in phone_user_ids}
+            )
             try:
                 await connection.send_text(payload)
             except Exception:

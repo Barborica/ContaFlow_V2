@@ -12,6 +12,7 @@ import ClientDashboardScreen from "./src/screens/ClientDashboardScreen";
 import StatsScreen from "./src/screens/StatsScreen";
 import AdminScreen from "./src/screens/AdminScreen";
 import { API_BASE_URL } from "./src/config";
+import { PhoneConnectionProvider } from "./src/contexts/PhoneConnectionContext";
 
 // Define route types and their parameters for autocomplete and type safety
 export type RootStackParamList = {
@@ -73,8 +74,9 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator
+    <PhoneConnectionProvider>
+      <NavigationContainer>
+        <Stack.Navigator
         initialRouteName={initialRoute}
         screenOptions={{
           headerShown: false,
@@ -96,7 +98,8 @@ export default function App() {
           initialParams={savedSession ?? undefined}
         />
         <Stack.Screen name="Validation" component={ValidationScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+        </Stack.Navigator>
+      </NavigationContainer>
+    </PhoneConnectionProvider>
   );
 }
