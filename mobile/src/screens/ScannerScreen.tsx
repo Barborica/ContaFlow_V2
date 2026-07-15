@@ -33,9 +33,12 @@ export default function ScannerScreen() {
     let reconnectTimeout: NodeJS.Timeout;
 
     const connect = async () => {
-      const serverUrl = await SecureStore.getItemAsync("server_url");
-      if (!serverUrl) return;
-      const wsUrl = `${serverUrl.replace(/^http/, "ws")}/ws?role=phone`;
+      const [serverUrl, token] = await Promise.all([
+        SecureStore.getItemAsync("server_url"),
+        SecureStore.getItemAsync("user_token"),
+      ]);
+      if (!serverUrl || !token) return;
+      const wsUrl = `${serverUrl.replace(/^http/, "ws")}/ws?role=phone&token=${encodeURIComponent(token)}`;
 
       try {
         ws = new WebSocket(wsUrl);
@@ -44,7 +47,7 @@ export default function ScannerScreen() {
           // connection registered on the server
         };
 
-        ws.onmessage = (event) => {
+        ws.onmessage = async (event) => {
           try {
             const msg = JSON.parse(event.data);
             if (msg.type === "active_client_changed") {
@@ -55,6 +58,15 @@ export default function ScannerScreen() {
                 setActiveClientName(null);
                 setActiveClientCui(null);
               }
+            } else if (msg.type === "logout") {
+              ws?.close();
+              await Promise.all([
+                SecureStore.deleteItemAsync("server_url"),
+                SecureStore.deleteItemAsync("user_token"),
+              ]);
+              setConnected(false);
+              setScanned(false);
+              Alert.alert("Deconectat", "Sesiunea a fost închisă din dashboard-ul web.");
             }
           } catch {
             // ignore malformed messages

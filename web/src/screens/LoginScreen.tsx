@@ -21,14 +21,22 @@ export default function LoginScreen({ navigation }: Props) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleLogin = async () => {
+    const normalizedEmail = email.trim();
+    const normalizedPassword = password.trim();
+
+    if (!normalizedEmail || !normalizedPassword) {
+      setErrorMessage("Completează adresa de email și parola.");
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
       // Construct authentication payload in OAuth2 application / x - www - form - urlencoded format
       const formData = new URLSearchParams();
-      formData.append("username", email);
-      formData.append("password", password);
+      formData.append("username", normalizedEmail);
+      formData.append("password", normalizedPassword);
 
       const authResponse = await fetch(
         `${API_BASE_URL}/api/v1/auth/login`,
@@ -44,7 +52,13 @@ export default function LoginScreen({ navigation }: Props) {
       const authData = await authResponse.json();
 
       if (!authResponse.ok) {
-        throw new Error(authData.detail || "Eroare la autentificare");
+        const detail = authData.detail;
+        const message = Array.isArray(detail)
+          ? detail.map((item) => item.msg).join(" ")
+          : typeof detail === "string"
+            ? detail
+            : "Eroare la autentificare";
+        throw new Error(message);
       }
 
       // Fetch LAN IP for mobile QR payload
@@ -144,9 +158,6 @@ export default function LoginScreen({ navigation }: Props) {
           </TouchableOpacity>
         )}
 
-        <Text style={styles.footerText}>
-          Conectează-te pentru a gestiona bonurile fiscale
-        </Text>
       </View>
     </View>
   );

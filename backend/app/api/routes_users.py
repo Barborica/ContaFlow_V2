@@ -18,6 +18,18 @@ def get_current_user_profile(
     return current_user
 
 
+@router.post("/me/logout", status_code=204)
+def logout_current_user(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+):
+    background_tasks.add_task(
+        ws_manager.broadcast_to_user,
+        str(current_user.id),
+        {"type": "logout"},
+    )
+
+
 @router.put("/me/active-client", response_model=UserResponse)
 def set_active_client(
     update: UserActiveClientUpdate,
@@ -50,7 +62,8 @@ def set_active_client(
     client_cui = client.cui if update.client_id else None
 
     background_tasks.add_task(
-        ws_manager.broadcast,
+        ws_manager.broadcast_to_user,
+        str(current_user.id),
         {
             "type": "active_client_changed",
             "client_id": update.client_id,

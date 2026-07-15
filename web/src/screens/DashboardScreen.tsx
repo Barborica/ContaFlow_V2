@@ -249,7 +249,15 @@ export default function DashboardScreen({ navigation, route }: Props) {
     fetchPending();
   }, [token]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/api/v1/users/me/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // The web session must still be cleared if the server is unreachable.
+    }
     wsRef.current?.close();
     localStorage.removeItem("contaflow_token");
     localStorage.removeItem("contaflow_server_url");
