@@ -77,9 +77,26 @@ def lookup_company(cui: str) -> dict | None:
     if not name:
         return None
 
+    if isinstance(address, dict):
+        parts = []
+        street = " ".join(
+            str(value)
+            for value in (address.get("street"), address.get("number"))
+            if value
+        )
+        if street:
+            parts.append(street)
+        for key in ("block", "scara", "floor", "apartment", "city", "sector", "county", "postalCode", "country"):
+            value = address.get(key)
+            if value:
+                parts.append(str(value))
+        address = ", ".join(parts) or None
+    elif address is not None and not isinstance(address, str):
+        address = str(address)
+
     return {
         "cui": f"RO{normalized}",
-        "name": name,
+        "name": str(name),
         "address": address,
         "raw": payload,
     }
