@@ -141,6 +141,27 @@ export default function ValidationScreen({ navigation, route }: Props) {
     });
   };
 
+  const handleDeleteReceipt = async () => {
+    if (!window.confirm("Ștergi definitiv acest bon și poza asociată?")) return;
+
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/receipts/${receiptId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Nu am putut șterge bonul.");
+      }
+      navigation.goBack();
+    } catch (error: any) {
+      setSaveError(error.message || "Nu am putut șterge bonul.");
+      setIsSaving(false);
+    }
+  };
+
   const handleValidate = async () => {
     setIsSaving(true);
     setSaveError(null);
@@ -403,6 +424,14 @@ export default function ValidationScreen({ navigation, route }: Props) {
             )}
 
             <TouchableOpacity
+              style={[styles.deleteButton, isSaving && styles.validateButtonDisabled]}
+              onPress={handleDeleteReceipt}
+              disabled={isSaving}
+            >
+              <Text style={styles.deleteButtonText}>Șterge bonul</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[
                 styles.validateButton,
                 isSaving && styles.validateButtonDisabled,
@@ -622,6 +651,21 @@ const styles = StyleSheet.create({
     color: "#f87171",
     fontSize: 14,
     fontWeight: "700",
+  },
+  deleteButton: {
+    height: 46,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.35)",
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  deleteButtonText: {
+    color: "#f87171",
+    fontSize: 14,
+    fontWeight: "600",
   },
   validateButton: {
     height: 50,

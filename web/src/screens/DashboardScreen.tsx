@@ -219,7 +219,7 @@ export default function DashboardScreen({ navigation, route }: Props) {
     };
   }, []);
 
-  // Load existing pending receipts on mount
+  // Reload pending receipts whenever this screen becomes active, including after deletion in validation.
   useEffect(() => {
     const fetchPending = async () => {
       try {
@@ -228,7 +228,6 @@ export default function DashboardScreen({ navigation, route }: Props) {
         });
         if (response.ok) {
           const data = await response.json();
-          // Map backend response to match our PendingReceipt type
           const mapped = data.map((r: any) => ({
             receipt_id: r.id,
             temp_path: r.temp_path,
@@ -246,8 +245,10 @@ export default function DashboardScreen({ navigation, route }: Props) {
         // Silently fail, receipts will arrive via WebSocket
       }
     };
+
     fetchPending();
-  }, [token]);
+    return navigation.addListener("focus", fetchPending);
+  }, [navigation, token]);
 
   const handleLogout = async () => {
     try {
@@ -270,6 +271,24 @@ export default function DashboardScreen({ navigation, route }: Props) {
       serverUrl: serverUrl,
       token: token,
     });
+  };
+
+  const handleDeleteReceipt = async (receiptId: string) => {
+    if (!window.confirm("Ștergi definitiv acest bon și poza asociată?")) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/receipts/${receiptId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Nu am putut șterge bonul.");
+      }
+      setPendingReceipts((prev) => prev.filter((receipt) => receipt.receipt_id !== receiptId));
+    } catch (error: any) {
+      window.alert(error.message || "Nu am putut șterge bonul.");
+    }
   };
 
   return (
@@ -413,29 +432,36 @@ export default function DashboardScreen({ navigation, route }: Props) {
             </View>
           ) : (
             pendingReceipts.map((receipt) => (
-              <TouchableOpacity
-                key={receipt.receipt_id}
-                style={styles.receiptCard}
-                onPress={() => handleOpenReceipt(receipt)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.receiptInfo}>
-                  <Text style={styles.receiptCui}>
-                    {receipt.parsed_data.supplier_cui || "CUI nedetectat"}
-                  </Text>
-                  <Text style={styles.receiptDate}>
-                    {receipt.parsed_data.date || "Dată nedetectată"}
-                  </Text>
-                </View>
-                <View style={styles.receiptRight}>
-                  <Text style={styles.receiptTotal}>
-                    {receipt.parsed_data.total
-                      ? `${receipt.parsed_data.total.toFixed(2)} LEI`
-                      : "—"}
-                  </Text>
-                  <Text style={styles.receiptArrow}>→</Text>
-                </View>
-              </TouchableOpacity>
+              <View key={receipt.receipt_id} style={styles.receiptCard}>
+                <TouchableOpacity
+                  style={styles.receiptOpenArea}
+                  onPress={() => handleOpenReceipt(receipt)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.receiptInfo}>
+                    <Text style={styles.receiptCui}>
+                      {receipt.parsed_data.supplier_cui || "CUI nedetectat"}
+                    </Text>
+                    <Text style={styles.receiptDate}>
+                      {receipt.parsed_data.date || "Dată nedetectată"}
+                    </Text>
+                  </View>
+                  <View style={styles.receiptRight}>
+                    <Text style={styles.receiptTotal}>
+                      {receipt.parsed_data.total
+                        ? `${receipt.parsed_data.total.toFixed(2)} LEI`
+                        : "—"}
+                    </Text>
+                    <Text style={styles.receiptArrow}>→</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.deleteReceiptButton}
+                  onPress={() => handleDeleteReceipt(receipt.receipt_id)}
+                >
+                  <Text style={styles.deleteReceiptText}>Șterge</Text>
+                </TouchableOpacity>
+              </View>
             ))
           )}
         </View>
@@ -721,6 +747,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#334155",
   },
+  receiptOpenArea: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   receiptInfo: {
     flex: 1,
   },
@@ -746,6 +778,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#6366f1",
     marginTop: 4,
+  },
+  deleteReceiptButton: {
+    marginLeft: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+    borderRadius: 7,
+  },
+  deleteReceiptText: {
+    color: "#f87171",
+    fontSize: 12,
+    fontWeight: "600",
   },
   clientCard: {
     backgroundColor: "#1e293b",

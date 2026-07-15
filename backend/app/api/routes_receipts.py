@@ -224,6 +224,37 @@ def get_receipt(
     }
 
 
+@router.delete("/{receipt_id}", status_code=204)
+def delete_pending_receipt(
+    receipt_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete a pending receipt and its temporary image."""
+    receipt = (
+        db.query(Receipt)
+        .filter(Receipt.id == receipt_id, Receipt.uploaded_by == current_user.id)
+        .first()
+    )
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Bonul nu a fost găsit.")
+    if receipt.status != "pending":
+        raise HTTPException(
+            status_code=409, detail="Pot fi șterse doar bonurile în așteptare."
+        )
+
+    image_path = os.path.join(TEMP_UPLOAD_DIR, receipt.image_path or "")
+    db.query(ReceiptItem).filter(ReceiptItem.receipt_id == receipt.id).delete()
+    db.delete(receipt)
+    db.commit()
+
+    if receipt.image_path and os.path.isfile(image_path):
+        try:
+            os.remove(image_path)
+        except OSError:
+            logger.warning("Could not remove temporary image %s", image_path)
+
+
 @router.post("/{receipt_id}/validate", response_model=ReceiptValidationResponse)
 def validate_receipt(
     receipt_id: str,
