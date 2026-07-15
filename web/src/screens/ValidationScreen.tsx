@@ -44,6 +44,11 @@ export default function ValidationScreen({ navigation, route }: Props) {
   const [date, setDate] = useState("");
   const [total, setTotal] = useState("");
   const [items, setItems] = useState<ReceiptItem[]>([]);
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [supplierName, setSupplierName] = useState("");
+  const [supplierAddress, setSupplierAddress] = useState("");
+  const [supplierModalError, setSupplierModalError] = useState<string | null>(null);
+  const [isCreatingSupplier, setIsCreatingSupplier] = useState(false);
 
   // Fetch full receipt data on mount
   useEffect(() => {
@@ -164,7 +169,7 @@ export default function ValidationScreen({ navigation, route }: Props) {
     }
   };
 
-  const handleValidate = async () => {
+  const submitValidation = async () => {
     setIsSaving(true);
     setSaveError(null);
     setInfoMessage(null);
@@ -186,17 +191,15 @@ export default function ValidationScreen({ navigation, route }: Props) {
             total_amount: total ? parseFloat(total) : null,
             items: items.map((item) => ({
               description: item.description,
-              quantity: parseFloat(item.quantity) || 0,
-              unit_price: parseFloat(item.unit_price) || 0,
-              total_price: parseFloat(item.total_price) || 0,
+              quantity: parseFloat(item.quantity.replace(",", ".")) || 0,
+              unit_price: parseFloat(item.unit_price.replace(",", ".")) || 0,
+              total_price: parseFloat(item.total_price.replace(",", ".")) || 0,
             })),
           }),
         },
       );
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || "Eroare la validare.");
-      }
+      if (!response.ok) throw new Error(data.detail || "Eroare la validare.");
       setInfoMessage(
         receiptStatus === "validated"
           ? "Modificările au fost salvate."
@@ -207,6 +210,84 @@ export default function ValidationScreen({ navigation, route }: Props) {
       setSaveError(error.message);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const openSupplierModal = async () => {
+    setSupplierName(companyName);
+    setSupplierAddress("");
+    setSupplierModalError(null);
+    setShowSupplierModal(true);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/v1/company-lookup?cui=${encodeURIComponent(supplierCui)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+      setSupplierName(data.name || companyName);
+      setSupplierAddress(data.address || "");
+    } catch {
+    }
+  };
+
+  const handleValidate = async () => {
+    if (!supplierCui.trim()) {
+      await submitValidation();
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/v1/suppliers/by-cui?cui=${encodeURIComponent(supplierCui)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (response.status === 404) {
+        await openSupplierModal();
+        return;
+      }
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Nu am putut verifica furnizorul.");
+      }
+      await submitValidation();
+    } catch (error: any) {
+      setSaveError(error.message || "Nu am putut verifica furnizorul.");
+    }
+  };
+
+  const confirmSupplier = async () => {
+    if (!supplierName.trim()) {
+      setSupplierModalError("Completează denumirea furnizorului.");
+      return;
+    }
+
+    setIsCreatingSupplier(true);
+    setSupplierModalError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/suppliers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: supplierName,
+          cui: supplierCui,
+          address: supplierAddress || null,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Nu am putut adăuga furnizorul.");
+      setCompanyName(data.name);
+      setSupplierCui(data.cui);
+      setShowSupplierModal(false);
+      await submitValidation();
+    } catch (error: any) {
+      setSupplierModalError(error.message || "Nu am putut adăuga furnizorul.");
+    } finally {
+      setIsCreatingSupplier(false);
     }
   };
 
@@ -471,6 +552,61 @@ export default function ValidationScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {showSupplierModal && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.supplierModal}>
+            <Text style={styles.modalTitle}>Adaugă furnizor în sistem</Text>
+            <Text style={styles.modalDescription}>
+              Furnizorul nu există. Verifică și completează datele înainte de confirmare.
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={supplierName}
+              onChangeText={setSupplierName}
+              placeholder="Denumire furnizor"
+              placeholderTextColor="#64748b"
+            />
+            <TextInput
+              style={styles.input}
+              value={supplierCui}
+              onChangeText={setSupplierCui}
+              placeholder="CUI / CIF"
+              placeholderTextColor="#64748b"
+            />
+            <TextInput
+              style={[styles.input, styles.addressInput]}
+              value={supplierAddress}
+              onChangeText={setSupplierAddress}
+              placeholder="Adresă"
+              placeholderTextColor="#64748b"
+              multiline
+            />
+            {supplierModalError && (
+              <Text style={styles.modalError}>{supplierModalError}</Text>
+            )}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setShowSupplierModal(false)}
+                disabled={isCreatingSupplier}
+              >
+                <Text style={styles.modalCancelText}>Anulează</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmButton, isCreatingSupplier && styles.validateButtonDisabled]}
+                onPress={confirmSupplier}
+                disabled={isCreatingSupplier}
+              >
+                {isCreatingSupplier ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>Adaugă și salvează bonul</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -718,6 +854,78 @@ const styles = StyleSheet.create({
     color: "#f87171",
     fontSize: 13,
     textAlign: "center",
+  },
+  modalOverlay: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: "rgba(2, 6, 23, 0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  supplierModal: {
+    width: "100%",
+    maxWidth: 480,
+    backgroundColor: "#1e293b",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#334155",
+    padding: 20,
+  },
+  modalTitle: {
+    color: "#e2e8f0",
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  modalDescription: {
+    color: "#94a3b8",
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  addressInput: {
+    minHeight: 72,
+    paddingTop: 12,
+    textAlignVertical: "top",
+  },
+  modalError: {
+    color: "#f87171",
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  modalCancelButton: {
+    paddingHorizontal: 14,
+    justifyContent: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#475569",
+  },
+  modalCancelText: {
+    color: "#cbd5e1",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  modalConfirmButton: {
+    minHeight: 42,
+    paddingHorizontal: 14,
+    backgroundColor: "#6366f1",
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalConfirmText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "600",
   },
   zoomControls: {
     position: "absolute",

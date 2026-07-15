@@ -31,32 +31,15 @@ def _normalize_cui(value: str | None) -> str | None:
     return re.sub(r"\D", "", normalized) or None
 
 
-def _ensure_supplier(
-    db: Session, supplier_cui: str | None, company_name: str | None
-) -> Supplier | None:
-    """Return existing supplier by CUI or create a new one from provided data."""
+def _ensure_supplier(db: Session, supplier_cui: str | None) -> Supplier | None:
     if not supplier_cui:
         return None
 
-    supplier = (
+    return (
         db.query(Supplier)
         .filter(Supplier.cui == _normalize_cui(supplier_cui))
         .first()
     )
-    if supplier:
-        return supplier
-
-    if not company_name:
-        return None
-
-    new_supplier = Supplier(
-        cui=_normalize_cui(supplier_cui),
-        name=company_name,
-    )
-    db.add(new_supplier)
-    db.commit()
-    db.refresh(new_supplier)
-    return new_supplier
 
 
 def _compress_and_move_image(temp_path: str, receipt_id: str, client_id: str | None) -> str:
@@ -329,8 +312,7 @@ def validate_receipt(
             detail="CUI-ul clientului de pe bon nu coincide cu clientul activ selectat.",
         )
 
-    # Supplier existence / auto-create
-    supplier = _ensure_supplier(db, data.supplier_cui, data.company_name)
+    supplier = _ensure_supplier(db, data.supplier_cui)
 
     # Parse and validate date
     receipt_date = None

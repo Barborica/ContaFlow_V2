@@ -9,6 +9,7 @@ from app.api.routes_auth import router as auth_router
 from app.api.routes_system import router as system_router
 from app.api.routes_receipts import router as receipts_router
 from app.api.routes_clients import router as clients_router
+from app.api.routes_suppliers import router as suppliers_router
 from app.api.routes_users import router as users_router
 from app.api.routes_lookup import router as lookup_router
 from app.api.routes_stats import router as stats_router
@@ -50,6 +51,7 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autentificare"])
 app.include_router(system_router, prefix="/api/v1/system", tags=["Sistem"])
 app.include_router(receipts_router, prefix="/api/v1/receipts", tags=["Bonuri fiscale"])
 app.include_router(clients_router, prefix="/api/v1/clients", tags=["Clienți"])
+app.include_router(suppliers_router, prefix="/api/v1/suppliers", tags=["Furnizori"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["Utilizatori"])
 app.include_router(lookup_router, prefix="/api/v1", tags=["Verificare firmă"])
 app.include_router(stats_router, prefix="/api/v1/stats", tags=["Statistici"])
