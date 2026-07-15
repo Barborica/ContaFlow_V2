@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  TextInput,
   ActivityIndicator,
   ScrollView,
 } from "react-native";
@@ -22,23 +21,11 @@ export default function ConnectionScreen({ route, navigation }: Props) {
   const [qrSource, setQrSource] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [wifiName, setWifiName] = useState("");
   const [copied, setCopied] = useState(false);
 
   const [backendConnected, setBackendConnected] = useState(false);
   const [phoneConnected, setPhoneConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
-
-  // Load persisted WiFi name
-  useEffect(() => {
-    const saved = localStorage.getItem("contaflow_wifi_name");
-    if (saved) setWifiName(saved);
-  }, []);
-
-  // Persist WiFi name
-  useEffect(() => {
-    localStorage.setItem("contaflow_wifi_name", wifiName);
-  }, [wifiName]);
 
   // Fetch network info and QR code image
   useEffect(() => {
@@ -169,20 +156,6 @@ export default function ConnectionScreen({ route, navigation }: Props) {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Rețea WiFi</Text>
-          <TextInput
-            style={styles.input}
-            value={wifiName}
-            onChangeText={setWifiName}
-            placeholder="Numele rețelei WiFi (opțional)"
-            placeholderTextColor="#64748b"
-          />
-          <Text style={styles.hint}>
-            Asigură-te că telefonul este pe aceeași rețea WiFi.
-          </Text>
-        </View>
-
-        <View style={styles.card}>
           <Text style={styles.label}>Adresă server</Text>
           <Text style={styles.serverUrl}>
             {networkInfo ? `http://${networkInfo.local_ip}:${networkInfo.port}` : serverUrl}
@@ -300,6 +273,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: "#334155",
+    alignItems: "center",
   },
   label: {
     fontSize: 12,
@@ -309,29 +283,15 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  input: {
-    height: 46,
-    backgroundColor: "#0f172a",
-    borderWidth: 1,
-    borderColor: "#334155",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    fontSize: 15,
-    color: "#f1f5f9",
-  },
-  hint: {
-    color: "#64748b",
-    fontSize: 12,
-    marginTop: 8,
-  },
   serverUrl: {
     color: "#e2e8f0",
     fontSize: 15,
     fontWeight: "600",
     marginBottom: 10,
+    textAlign: "center",
   },
   copyButton: {
-    alignSelf: "flex-start",
+    alignSelf: "center",
     backgroundColor: "rgba(99, 102, 241, 0.12)",
     borderRadius: 8,
     borderWidth: 1,
