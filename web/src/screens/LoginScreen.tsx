@@ -58,10 +58,23 @@ export default function LoginScreen({ navigation }: Props) {
       localStorage.setItem("contaflow_token", authData.access_token);
       localStorage.setItem("contaflow_server_url", serverUrl);
 
-      navigation.replace("Dashboard", {
-        token: authData.access_token,
-        serverUrl: serverUrl,
+      // Route admins to their own dashboard, accountants to the main dashboard
+      const profileRes = await fetch(`${API_BASE_URL}/api/v1/users/me`, {
+        headers: { Authorization: `Bearer ${authData.access_token}` },
       });
+      const profile = profileRes.ok ? await profileRes.json() : { role: "accountant" };
+
+      if (profile.role === "admin") {
+        navigation.replace("AdminDashboard", {
+          token: authData.access_token,
+          serverUrl: serverUrl,
+        });
+      } else {
+        navigation.replace("Dashboard", {
+          token: authData.access_token,
+          serverUrl: serverUrl,
+        });
+      }
     } catch (error: any) {
       setErrorMessage(error.message);
     } finally {

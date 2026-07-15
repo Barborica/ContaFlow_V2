@@ -11,6 +11,8 @@ from app.api.routes_receipts import router as receipts_router
 from app.api.routes_clients import router as clients_router
 from app.api.routes_users import router as users_router
 from app.api.routes_lookup import router as lookup_router
+from app.api.routes_stats import router as stats_router
+from app.api.routes_admin import router as admin_router
 from app.api.routes_ws import router as ws_router
 from app.services.processing import worker as processing_worker, warmup_ocr
 
@@ -50,6 +52,8 @@ app.include_router(receipts_router, prefix="/api/v1/receipts", tags=["Bonuri fis
 app.include_router(clients_router, prefix="/api/v1/clients", tags=["Clienți"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["Utilizatori"])
 app.include_router(lookup_router, prefix="/api/v1", tags=["Verificare firmă"])
+app.include_router(stats_router, prefix="/api/v1/stats", tags=["Statistici"])
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["Administrare"])
 app.include_router(ws_router, tags=["WebSocket"])
 
 # Serve temp uploaded images as static files

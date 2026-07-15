@@ -307,6 +307,12 @@ export default function DashboardScreen({ navigation, route }: Props) {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.connectionButton}
+            onPress={() => navigation.navigate("Stats", { token, serverUrl })}
+          >
+            <Text style={styles.connectionButtonText}>Statistici</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.connectionButton}
             onPress={() => navigation.navigate("Connection", { token, serverUrl })}
           >
             <Text style={styles.connectionButtonText}>Conexiune</Text>
