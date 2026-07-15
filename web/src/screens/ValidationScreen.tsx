@@ -101,9 +101,20 @@ export default function ValidationScreen({ navigation, route }: Props) {
     value: string
   ) => {
     setItems((prev) => {
-      const next = prev.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item
-      );
+      const next = prev.map((item) => {
+        if (item.id !== id) return item;
+
+        const updated = { ...item, [field]: value };
+        if (field === "quantity" || field === "unit_price") {
+          const quantity = parseFloat(updated.quantity.replace(",", "."));
+          const unitPrice = parseFloat(updated.unit_price.replace(",", "."));
+          updated.total_price =
+            Number.isFinite(quantity) && Number.isFinite(unitPrice)
+              ? (quantity * unitPrice).toFixed(2)
+              : "";
+        }
+        return updated;
+      });
       recalcTotal(next);
       return next;
     });
