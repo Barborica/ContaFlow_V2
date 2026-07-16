@@ -323,6 +323,12 @@ def validate_receipt(
     normalized_client_cui = _normalize_cui(data.client_cui)
     supplier = _ensure_supplier(db, data.supplier_cui)
 
+    if not data.items:
+        raise HTTPException(
+            status_code=400,
+            detail="Bonul trebuie să conțină cel puțin un produs.",
+        )
+
     # Parse and validate date
     receipt_date = None
     if data.date:

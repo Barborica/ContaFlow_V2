@@ -259,6 +259,11 @@ export default function ValidationScreen({ navigation, route }: Props) {
   const handleValidate = async () => {
     setSaveError(null);
 
+    if (items.length === 0) {
+      setSaveError("Bonul trebuie să conțină cel puțin un produs.");
+      return;
+    }
+
     // Step 1: Verify supplier (existing flow)
     if (supplierCui.trim()) {
       try {
