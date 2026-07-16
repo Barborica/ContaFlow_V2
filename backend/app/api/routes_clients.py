@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import re
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,34 @@ from app.api.deps import get_current_user
 from app.schemas import ClientCreate, ClientResponse
 
 router = APIRouter()
+
+
+def _normalize_cui(value: str) -> str:
+    normalized = value.upper().replace(" ", "").replace(".", "")
+    normalized = re.sub(r"^(RO|R0)", "", normalized)
+    return re.sub(r"\D", "", normalized)
+
+
+@router.get("/by-cui")
+def get_client_by_cui(
+    cui: str = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Look up an active client by CUI (normalized)."""
+    normalized_cui = _normalize_cui(cui)
+    if not normalized_cui:
+        raise HTTPException(status_code=400, detail="CUI invalid.")
+
+    client = (
+        db.query(Client)
+        .filter(Client.cui == normalized_cui, Client.is_deleted == False)  # noqa: E712
+        .first()
+    )
+    if not client:
+        raise HTTPException(status_code=404, detail="Clientul nu a fost găsit.")
+
+    return client
 
 
 @router.get("", response_model=list[ClientResponse])

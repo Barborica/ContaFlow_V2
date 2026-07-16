@@ -50,6 +50,18 @@ export default function ValidationScreen({ navigation, route }: Props) {
   const [supplierModalError, setSupplierModalError] = useState<string | null>(null);
   const [isCreatingSupplier, setIsCreatingSupplier] = useState(false);
 
+  // Client verification modals
+  const [showClientSwitchModal, setShowClientSwitchModal] = useState(false);
+  const [showCreateClientModal, setShowCreateClientModal] = useState(false);
+  const [matchedClient, setMatchedClient] = useState<{ id: string; name: string; cui: string } | null>(null);
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientCui, setNewClientCui] = useState("");
+  const [newClientAddress, setNewClientAddress] = useState("");
+  const [clientModalError, setClientModalError] = useState<string | null>(null);
+  const [isCreatingClient, setIsCreatingClient] = useState(false);
+  // Pending switch_client_id to pass to submitValidation after modal flow
+  const [pendingSwitchClientId, setPendingSwitchClientId] = useState<string | null>(null);
+
   // Fetch full receipt data on mount
   useEffect(() => {
     const fetchReceipt = async () => {
@@ -169,12 +181,29 @@ export default function ValidationScreen({ navigation, route }: Props) {
     }
   };
 
-  const submitValidation = async () => {
+  const submitValidation = async (switchClientId?: string | null) => {
     setIsSaving(true);
     setSaveError(null);
     setInfoMessage(null);
 
     try {
+      const body: any = {
+        company_name: companyName,
+        supplier_cui: supplierCui,
+        client_cui: clientCui,
+        date,
+        total_amount: total ? parseFloat(total) : null,
+        items: items.map((item) => ({
+          description: item.description,
+          quantity: parseFloat(item.quantity.replace(",", ".")) || 0,
+          unit_price: parseFloat(item.unit_price.replace(",", ".")) || 0,
+          total_price: parseFloat(item.total_price.replace(",", ".")) || 0,
+        })),
+      };
+      if (switchClientId) {
+        body.switch_client_id = switchClientId;
+      }
+
       const response = await fetch(
         `${API_BASE_URL}/api/v1/receipts/${receiptId}/validate`,
         {
@@ -183,19 +212,7 @@ export default function ValidationScreen({ navigation, route }: Props) {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            company_name: companyName,
-            supplier_cui: supplierCui,
-            client_cui: clientCui,
-            date,
-            total_amount: total ? parseFloat(total) : null,
-            items: items.map((item) => ({
-              description: item.description,
-              quantity: parseFloat(item.quantity.replace(",", ".")) || 0,
-              unit_price: parseFloat(item.unit_price.replace(",", ".")) || 0,
-              total_price: parseFloat(item.total_price.replace(",", ".")) || 0,
-            })),
-          }),
+          body: JSON.stringify(body),
         },
       );
       const data = await response.json();
@@ -205,6 +222,7 @@ export default function ValidationScreen({ navigation, route }: Props) {
           ? "Modificările au fost salvate."
           : "Bonul a fost validat și salvat.",
       );
+      setPendingSwitchClientId(null);
       setTimeout(() => navigation.goBack(), 1200);
     } catch (error: any) {
       setSaveError(error.message);
@@ -232,28 +250,157 @@ export default function ValidationScreen({ navigation, route }: Props) {
     }
   };
 
+  // Normalize CUI for comparison (strip RO/R0, non-digits)
+  const normalizeCui = (cui: string) => {
+    return cui.toUpperCase().replace(/\s/g, "").replace(/\./g, "").replace(/^(RO|R0)/, "").replace(/\D/g, "");
+  };
+
+  // Core flow: check supplier → check client → submit
   const handleValidate = async () => {
-    if (!supplierCui.trim()) {
-      await submitValidation();
+    setSaveError(null);
+
+    // Step 1: Verify supplier (existing flow)
+    if (supplierCui.trim()) {
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/v1/suppliers/by-cui?cui=${encodeURIComponent(supplierCui)}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (res.status === 404) {
+          // Will call verifyClientCui() after supplier is created
+          await openSupplierModal();
+          return;
+        }
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.detail || "Nu am putut verifica furnizorul.");
+        }
+      } catch (error: any) {
+        setSaveError(error.message || "Nu am putut verifica furnizorul.");
+        return;
+      }
+    }
+
+    // Step 2: Verify client CUI
+    await verifyClientCui();
+  };
+
+  const verifyClientCui = async (switchId?: string | null) => {
+    const trimmedCui = clientCui.trim();
+    if (!trimmedCui) {
+      await submitValidation(switchId);
       return;
     }
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/suppliers/by-cui?cui=${encodeURIComponent(supplierCui)}`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (response.status === 404) {
-        await openSupplierModal();
+      // Fetch the current active client to compare CUIs
+      const profileRes = await fetch(`${API_BASE_URL}/api/v1/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!profileRes.ok) {
+        await submitValidation(switchId);
         return;
       }
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail || "Nu am putut verifica furnizorul.");
+      const profile = await profileRes.json();
+
+      // If there is an active client, fetch it to get its CUI
+      if (profile.active_client_id) {
+        const clientsRes = await fetch(`${API_BASE_URL}/api/v1/clients`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (clientsRes.ok) {
+          const allClients = await clientsRes.json();
+          const activeClient = allClients.find((c: any) => c.id === profile.active_client_id);
+          if (activeClient && normalizeCui(trimmedCui) === normalizeCui(activeClient.cui)) {
+            // CUI matches active client — proceed normally
+            await submitValidation(switchId);
+            return;
+          }
+        }
       }
-      await submitValidation();
+
+      // CUI does not match (or no active client) — check if this CUI exists in DB
+      const cuiRes = await fetch(
+        `${API_BASE_URL}/api/v1/clients/by-cui?cui=${encodeURIComponent(trimmedCui)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (cuiRes.ok) {
+        // Client exists — ask to switch
+        const found = await cuiRes.json();
+        setMatchedClient({ id: found.id, name: found.name, cui: found.cui });
+        setShowClientSwitchModal(true);
+        return;
+      }
+      if (cuiRes.status === 404) {
+        // Client doesn't exist — ask to create
+        setNewClientCui(trimmedCui);
+        setNewClientName("");
+        setNewClientAddress("");
+        setClientModalError(null);
+        setShowCreateClientModal(true);
+
+        // Pre-fill from external API
+        try {
+          const lookupRes = await fetch(
+            `${API_BASE_URL}/api/v1/company-lookup?cui=${encodeURIComponent(trimmedCui)}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          if (lookupRes.ok) {
+            const info = await lookupRes.json();
+            setNewClientName(info.name || "");
+            setNewClientAddress(info.address || "");
+          }
+        } catch {
+          // Pre-fill is best-effort
+        }
+        return;
+      }
+
+      // Other error — proceed anyway
+      await submitValidation(switchId);
     } catch (error: any) {
-      setSaveError(error.message || "Nu am putut verifica furnizorul.");
+      setSaveError(error.message || "Nu am putut verifica clientul.");
+    }
+  };
+
+  // User confirmed switching to an existing client
+  const confirmClientSwitch = async () => {
+    setShowClientSwitchModal(false);
+    if (matchedClient) {
+      await submitValidation(matchedClient.id);
+    }
+  };
+
+  // User confirmed creating a new client and switching to it
+  const confirmCreateClient = async () => {
+    if (!newClientName.trim()) {
+      setClientModalError("Completează denumirea clientului.");
+      return;
+    }
+
+    setIsCreatingClient(true);
+    setClientModalError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/clients`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: newClientName,
+          cui: newClientCui,
+          address: newClientAddress || null,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Nu am putut adăuga clientul.");
+      setShowCreateClientModal(false);
+      await submitValidation(data.id);
+    } catch (error: any) {
+      setClientModalError(error.message || "Nu am putut adăuga clientul.");
+    } finally {
+      setIsCreatingClient(false);
     }
   };
 
@@ -283,7 +430,8 @@ export default function ValidationScreen({ navigation, route }: Props) {
       setCompanyName(data.name);
       setSupplierCui(data.cui);
       setShowSupplierModal(false);
-      await submitValidation();
+      // After supplier is created, continue with client verification
+      await verifyClientCui();
     } catch (error: any) {
       setSupplierModalError(error.message || "Nu am putut adăuga furnizorul.");
     } finally {
@@ -552,6 +700,7 @@ export default function ValidationScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {/* Supplier modal */}
       {showSupplierModal && (
         <View style={styles.modalOverlay}>
           <View style={styles.supplierModal}>
@@ -598,6 +747,93 @@ export default function ValidationScreen({ navigation, route }: Props) {
                 disabled={isCreatingSupplier}
               >
                 {isCreatingSupplier ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>Adaugă și continuă</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Client switch modal — client exists in DB but differs from active */}
+      {showClientSwitchModal && matchedClient && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.supplierModal}>
+            <Text style={styles.modalTitle}>Client diferit detectat</Text>
+            <Text style={styles.modalDescription}>
+              CUI-ul clientului de pe bon ({clientCui}) corespunde clientului
+              "{matchedClient.name}" (CUI: {matchedClient.cui}), dar acesta nu
+              este clientul activ selectat.{"\n\n"}Dorești să schimbi clientul
+              activ și să asociezi bonul cu "{matchedClient.name}"?
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setShowClientSwitchModal(false)}
+              >
+                <Text style={styles.modalCancelText}>Nu, păstrează clientul curent</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmButton}
+                onPress={confirmClientSwitch}
+              >
+                <Text style={styles.modalConfirmText}>Da, schimbă clientul</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Create new client modal — CUI not found in DB */}
+      {showCreateClientModal && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.supplierModal}>
+            <Text style={styles.modalTitle}>Client necunoscut</Text>
+            <Text style={styles.modalDescription}>
+              Nu există un client cu CUI-ul {newClientCui} în sistem.
+              Dorești să îl adaugi?
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={newClientName}
+              onChangeText={setNewClientName}
+              placeholder="Denumire client"
+              placeholderTextColor="#64748b"
+            />
+            <TextInput
+              style={styles.input}
+              value={newClientCui}
+              onChangeText={setNewClientCui}
+              placeholder="CUI / CIF"
+              placeholderTextColor="#64748b"
+            />
+            <TextInput
+              style={[styles.input, styles.addressInput]}
+              value={newClientAddress}
+              onChangeText={setNewClientAddress}
+              placeholder="Adresă"
+              placeholderTextColor="#64748b"
+              multiline
+            />
+            {clientModalError && (
+              <Text style={styles.modalError}>{clientModalError}</Text>
+            )}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setShowCreateClientModal(false)}
+                disabled={isCreatingClient}
+              >
+                <Text style={styles.modalCancelText}>Anulează</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmButton, isCreatingClient && styles.validateButtonDisabled]}
+                onPress={confirmCreateClient}
+                disabled={isCreatingClient}
+              >
+                {isCreatingClient ? (
                   <ActivityIndicator size="small" color="#ffffff" />
                 ) : (
                   <Text style={styles.modalConfirmText}>Adaugă și salvează bonul</Text>

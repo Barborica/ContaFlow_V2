@@ -291,6 +291,22 @@ def validate_receipt(
             status_code=409, detail="Bonul nu poate fi modificat în starea curentă."
         )
 
+    # Handle client switch: reassign receipt to a different client
+    if data.switch_client_id:
+        new_client = (
+            db.query(Client)
+            .filter(Client.id == data.switch_client_id, Client.is_deleted == False)  # noqa: E712
+            .first()
+        )
+        if not new_client:
+            raise HTTPException(
+                status_code=404,
+                detail="Clientul selectat nu există sau a fost șters.",
+            )
+        receipt.client_id = new_client.id
+        # Keep the accountant's active client in sync
+        current_user.active_client_id = new_client.id
+
     if not receipt.client_id:
         raise HTTPException(
             status_code=400,
@@ -304,14 +320,7 @@ def validate_receipt(
             detail="Clientul asociat bonului nu mai există.",
         )
 
-    # Client CUI verification: the receipt's buyer CUI must match the selected client
     normalized_client_cui = _normalize_cui(data.client_cui)
-    if normalized_client_cui and normalized_client_cui != _normalize_cui(client.cui):
-        raise HTTPException(
-            status_code=400,
-            detail="CUI-ul clientului de pe bon nu coincide cu clientul activ selectat.",
-        )
-
     supplier = _ensure_supplier(db, data.supplier_cui)
 
     # Parse and validate date
@@ -370,6 +379,7 @@ def validate_receipt(
                 "supplier_cui": receipt.supplier_cui,
                 "client_cui": receipt.client_cui,
                 "client_id": receipt.client_id,
+                "switched_client": bool(data.switch_client_id),
             },
         )
     )
@@ -380,3 +390,4 @@ def validate_receipt(
         "status": receipt.status,
         "image_path": receipt.image_path,
     }
+

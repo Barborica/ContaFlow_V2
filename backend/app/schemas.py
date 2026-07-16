@@ -67,6 +67,7 @@ class ReceiptValidationRequest(BaseModel):
     date: Optional[str] = None  # YYYY-MM-DD
     total_amount: Optional[float] = None
     items: List[ReceiptItemValidation] = []
+    switch_client_id: Optional[str] = None  # reassign receipt to a different client
 
 
 class ReceiptValidationResponse(BaseModel):
